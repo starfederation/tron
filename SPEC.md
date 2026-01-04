@@ -552,3 +552,38 @@ Trailer (last 12 bytes):
 - prev root offset = 0
 - magic = `TRON`
   - trailer starts at offset `0x00E8` in this example
+
+## JSON mapping
+
+This section defines a deterministic mapping between TRON values and JSON
+for interop and fixtures. It matches the reference implementation.
+
+JSON -> TRON:
+
+- `null` => `nil`
+- `true`/`false` => `bit`
+- numbers:
+  - if the input is an integer within signed 64-bit range, encode as `i64`
+  - otherwise encode as `f64`
+- strings:
+  - if the string starts with `b64:` and the remainder is valid base64,
+    decode to `bin`
+  - otherwise encode as `txt` (UTF-8 bytes of the JSON string)
+- arrays => `arr` trie using indices 0..n-1
+- objects => `map` trie using UTF-8 key bytes (duplicate key handling
+  follows the JSON parser; typically the last value wins)
+
+TRON -> JSON:
+
+- `nil` => `null`
+- `bit` => `true`/`false`
+- `i64` => JSON number (decimal)
+- `f64` => JSON number (must be finite; otherwise error)
+- `txt` => JSON string
+- `bin` => JSON string with prefix `b64:` followed by base64 payload
+- `arr`/`map` => JSON array/object
+
+Notes:
+
+- The `b64:` prefix is reserved for binary encoding in JSON. If a string
+  begins with `b64:` but is not valid base64, it remains a `txt` string.
