@@ -6,7 +6,7 @@ TRie Object Notation (TRON) is a binary format intended to be compatible with JS
 
 The name emphasizes the trie-based layout used for maps and arrays.
 
-This repository hosts the evolving spec, documentation, and shared fixtures. The Go and TypeScript implementations live in sibling repos (`tron-go`, `tron-ts`) and consume this repo as a git submodule for shared assets.
+This repository hosts the evolving spec, documentation, and shared fixtures.
 
 ## Features
 
@@ -85,16 +85,18 @@ See [`SPEC.md`](SPEC.md) for the draft binary format and [`PRIMER.md`](PRIMER.md
 
 ## Implementations
 
-Implementation repos live alongside this one and use `tron-shared` as a submodule for shared fixtures.
+Implementation repos live external and can use `tron-shared` as a submodule for shared fixtures.
 
-| Feature | [tron-go](https://github.com/starfederation/tron-go) | [tron-ts](https://github.com/starfederation/tron-ts) |
-| --- | --- | --- |
-| Core encode/decode (scalar + tree) | ✅ | ✅ |
-| JSON interop (`fromJSON`/`toJSON`) | ✅ | ✅ |
-| Copy-on-write update helpers | ✅ | ❌ |
-| JMESPath queries | ✅ | ❌ |
-| JSON Merge Patch (RFC 7386) | ✅ | ❌ |
-| JSON Schema validation (draft 2020-12) | ✅ | ❌ |
+| Feature                                | [tron-go](https://github.com/starfederation/tron-go) | [tron-ts](https://github.com/starfederation/tron-ts) | [tron-rust](https://github.com/oliverlambson/tron-rust) |
+| -------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------- |
+| Core encode/decode (scalar + tree)     | ✅                                                   | ✅                                                   | 🚧                                                      |
+| JSON interop (`fromJSON`/`toJSON`)     | ✅                                                   | ✅                                                   | 🚧                                                      |
+| Copy-on-write update helpers           | ✅                                                   | ❌                                                   | 🚧                                                      |
+| JMESPath queries                       | ✅                                                   | ❌                                                   | 🚧                                                      |
+| JSON Merge Patch (RFC 7386)            | ✅                                                   | ❌                                                   | 🚧                                                      |
+| JSON Schema validation (draft 2020-12) | ✅                                                   | ❌                                                   | 🚧                                                      |
+
+Note: `tron-rust` is in early development (see the `impl` branch); feature parity is still in progress.
 
 Shared fixtures: add this repo as a `tron-shared` submodule to consume `shared/testdata` and `shared/metaschemas`.
 
