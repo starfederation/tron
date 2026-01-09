@@ -1,15 +1,16 @@
 # TRie Object Notation (TRON) Spec (draft)
 
-| Revision | Date       | Author                    | Info                              |
-| -------- | ---------- | ------------------------- | --------------------------------- |
-| 0        | 2025-12-30 | @delaneyj                 | Initial design                    |
-| 1        | 2026-01-04 | @delaneyj                 | Add JSON mapping                  |
-| 2        | 2026-01-04 | @delaneyj, @oliverlambson | Fix xxh32 spec                    |
-| 3        | 2026-01-05 | @delaneyj                 | Add JSON Merge Patch and JMESPath |
-| 4        | 2026-01-08 | @oliverlambson            | Annotate byte-level TRON example  |
-| 5        | 2026-01-08 | @oliverlambson            | Reserve full u32 for HAMT bitmap  |
-| 6        | 2026-01-08 | @oliverlambson            | Revise value tag header format    |
-| 7        | 2026-01-09 | @oliverlambson            | Remove unnecessary reserved bytes |
+| Revision | Date       | Author                    | Info                                        |
+| -------- | ---------- | ------------------------- | ------------------------------------------- |
+| 0        | 2025-12-30 | @delaneyj                 | Initial design                              |
+| 1        | 2026-01-04 | @delaneyj                 | Add JSON mapping                            |
+| 2        | 2026-01-04 | @delaneyj, @oliverlambson | Fix xxh32 spec                              |
+| 3        | 2026-01-05 | @delaneyj                 | Add JSON Merge Patch and JMESPath           |
+| 4        | 2026-01-08 | @oliverlambson            | Annotate byte-level TRON example            |
+| 5        | 2026-01-08 | @oliverlambson            | Reserve full u32 for HAMT bitmap            |
+| 6        | 2026-01-08 | @oliverlambson            | Revise value tag header format              |
+| 7        | 2026-01-09 | @oliverlambson            | Remove unnecessary reserved bytes           |
+| 8        | 2026-01-10 | @oliverlambson            | Be explicit that all addresses are absolute |
 
 This document defines the binary format for TRie Object Notation. It is intended to be compatible with JSON primitives while using HAMT (for maps) and vector tries (for arrays) to support fast in-place modifications without rewriting the entire document. The format targets transport and embedding as a single blob in databases or KV stores, not a database or storage engine itself.
 
@@ -22,32 +23,36 @@ A TRie Object Notation (TRON) document is a self-contained blob and can be store
 
 All multi-byte values are little-endian.
 
-## 2. Root record trailer
+## 2. Byte addressing
 
-The root record trailer lives at the end of a tree document (last 12 bytes). Writers append new nodes, then update the root record with the new root offset. The previous root offset allows walking the history backward. The magic `TRON` is the last 4 bytes of the document.
+TRON document trees are traversed by following "address" values for bytes. An address is the absolute position of a byte within the docuement's byte buffer. Addresses are u32 values starting at 0x00 for the first byte of the buffer.
+
+## 3. Root record trailer
+
+The root record trailer lives at the end of a tree document (last 12 bytes). Writers append new nodes, then update the root record with the new root address. The previous root address allows walking the history backward. The magic `TRON` is the last 4 bytes of the document.
 
 Trailer layout (from start of trailer):
 
 ```
 Offset  Size  Field
-0       4     Root node offset (u32)
-4       4     Prev root offset (u32)
+0       4     Root node address (u32)
+4       4     Prev root address (u32)
 8       4     Magic "TRON"
 ```
 
 Read flow:
 
 - For tree documents, read the last 12 bytes and parse the trailer (magic is at the end).
-- Read the root node at the offset; the node header encodes its length.
+- Read the root node at the address; the node header encodes its length.
 
 Write flow (copy-on-write):
 
 - Append new/updated nodes and values.
-- Set prev root offset to the prior root offset.
-- Update the root offset in the trailer.
+- Set prev root address to the prior root address.
+- Update the root address in the trailer.
 - Write the trailer last at the end of the document (so readers always see a complete root).
 
-## 3. Scalar terminator
+## 4. Scalar terminator
 
 Scalar documents (top-level value is not `arr` or `map`) end with a 4-byte terminator `NORT`. The value record begins at byte 0 and runs up to the terminator. The terminator is not part of any payload.
 
@@ -56,7 +61,7 @@ Readers can distinguish formats by checking the tail:
 - If the last 4 bytes are `NORT`, it is a scalar document.
 - If the last 4 bytes are `TRON`, it is a tree document with a root record trailer.
 
-## 4. Value tag header
+## 5. Value tag header
 
 Each value record begins with a 1-byte tag header. The top 3 bits encode the type, the lower 5 bits are type-specific.
 
@@ -121,19 +126,19 @@ Example: 3 bytes `0xAA 0xBB 0xCC` -> tag `0x3D`, payload `0xAA 0xBB 0xCC`
 
 ### arr (0b110)
 
-Tag bits: `000ll110` where `ll + 1` is payload length. Payload is a node offset (u32) encoded in L+1 bytes (1..4), little-endian.
+Tag bits: `000ll110` where `ll + 1` is payload length. Payload is a node address (u32) encoded in L+1 bytes (1..4), little-endian.
 
-Example: root node at offset `0x10` -> tag `0x06`, payload `0x10`
+Example: root node at address `0x10` -> tag `0x06`, payload `0x10`
 
 ### map (0b111)
 
-Tag bits: `000ll111` where `ll + 1` is payload length. Payload is a node offset (u32) encoded in L+1 bytes (1..4), little-endian.
+Tag bits: `000ll111` where `ll + 1` is payload length. Payload is a node address (u32) encoded in L+1 bytes (1..4), little-endian.
 
-Example: root node at offset `0x20` -> tag `0x07`, payload `0x20`
+Example: root node at address `0x20` -> tag `0x07`, payload `0x20`
 
-## 5. HAMT (map) and vector trie (arr) nodes
+## 6. HAMT (map) and vector trie (arr) nodes
 
-Maps use a 16-way HAMT keyed by `xxh32` of the UTF-8 key bytes (seed=0). Arrays use a 16-way vector trie keyed by index bits. Nodes are variable-size and referenced by the node offset stored in `arr` and `map` value records.
+Maps use a 16-way HAMT keyed by `xxh32` of the UTF-8 key bytes (seed=0). Arrays use a 16-way vector trie keyed by index bits. Nodes are variable-size and referenced by the node address stored in `arr` and `map` value records.
 
 Node header:
 
@@ -217,7 +222,7 @@ Branch node layout (map):
 ```
 Offset  Size  Field
 8       4     Bitmap (u32) - note since there are max 16 slots, the upper 2 bytes are always 0
-12      4*n   Child offsets (u32), ordered by slot index
+12      4*n   Child addresses (u32), ordered by slot index
 ```
 
 - `entry_count` must equal popcount(bitmap).
@@ -260,7 +265,7 @@ Offset  Size  Field
 ```
 
 - `entry_count` must equal popcount(bitmap).
-- For branch nodes, entries are `u32 child_offset`.
+- For branch nodes, entries are `u32 child_address`.
 - For leaf nodes, entries are value records.
 - Root node shift is chosen so the highest set bits of the maximum index are covered; for small arrays, shift may be 0.
 - Child nodes use `shift - 4`. Leaf nodes must have shift=0.
@@ -271,7 +276,7 @@ Offset  Size  Field
 - Array lookup/set/append are O(d), where d is depth (<= 8 for u32 indices with 4-bit chunks).
 - Arrays may be sparse during updates; missing indices are treated as `nil` for logical operations. Canonical encoding must densify arrays by rewriting into a new document (filling missing indices with `nil`).
 
-## 6. Update algorithms (pseudocode)
+## 7. Update algorithms (pseudocode)
 
 The following pseudocode describes logical updates. Implementations must use copy-on-write as described in section 8.
 
@@ -431,7 +436,7 @@ Root growth:
 
 - If index requires a higher shift than the current root, create a new root with increased shift and insert the old root as a child.
 
-## 7. Canonical encoding
+## 8. Canonical encoding
 
 Canonical encoding is defined as a full vacuum/re-encode of a logical JSON value into a new TRON document. The result must be byte-for-byte deterministic.
 
@@ -441,14 +446,14 @@ Rules:
   - If inline packing is possible (txt/bin/arr/map), use it.
   - Otherwise, use the minimal byte length L and minimal length-of-length N.
   - For `i64` and `f64`, payloads are fixed 8 bytes.
-  - For `arr`/`map` node offsets, use the minimal L (1..4).
+  - For `arr`/`map` node addresses, use the minimal L (1..4).
 - For maps, build a 16-way HAMT from the full key set using xxh32 (seed=0). Nodes are constructed deterministically by slot order at each depth. Leaf nodes contain collision buckets only at max depth.
 - For arrays, build a 16-way vector trie with the minimal root shift that covers the maximum index (length-1). Leaf nodes must have shift=0. Indices are 0..length-1; missing indices are not allowed (use `nil` explicitly).
 - Serialize nodes in depth-first post-order, visiting slots in ascending order. Children are written before parents.
-- The root node is the last node written; root offset points to that node. The trailer is written last.
-- For canonical output, the root trailer prev root offset must be zero.
+- The root node is the last node written; root address points to that node. The trailer is written last.
+- For canonical output, the root trailer prev root address must be zero.
 
-## 8. Copy-on-write updates
+## 9. Copy-on-write updates
 
 TRON is append-only at the byte level. Writers must not modify existing bytes in place.
 
@@ -456,9 +461,9 @@ Update flow:
 
 - Read the current root from the trailer and traverse to the target leaf.
 - Build a new leaf node with the updated entry.
-- Rebuild ancestor nodes up to a new root, updating child offsets to point at newly appended nodes.
+- Rebuild ancestor nodes up to a new root, updating child addresses to point at newly appended nodes.
 - Append all newly built nodes and any new value payloads.
-- Append a new trailer with the updated root/prev root offsets; the trailer must be the final 12 bytes.
+- Append a new trailer with the updated root/prev root addresses; the trailer must be the final 12 bytes.
 - Old nodes and old trailers remain as garbage and are ignored by readers.
 
 Update behavior:
@@ -467,7 +472,7 @@ Update behavior:
 - Map set/delete are structural updates: rewrite the affected leaf and its ancestor path.
 - Branch nodes update their bitmaps and entry counts; empty branches are removed.
 
-## 9. Patch format (JSON Patch semantics)
+## 10. Patch format (JSON Patch semantics)
 
 TRON Patch applies JSON Patch semantics (RFC 6902) with a binary-friendly encoding. A patch is a TRON `arr` of operation records. Each operation record is a TRON `map` with fields:
 
@@ -529,7 +534,7 @@ Complexity:
 
 - O(k \* d) for k updated keys and depth d in the map trie, with structural reuse of unchanged subtrees.
 
-## Byte-level example (canonical TRON tree document)
+## 11. Byte-level example (canonical TRON tree document)
 
 Encode this JSON patch instruction in TRON:
 
@@ -555,7 +560,7 @@ Encode this JSON patch instruction in TRON:
 _Note that in the representation of the json patch above, the paths have been
 split and the ops have been enumerated._
 
-TRON bytes (hex, offsets at left):
+TRON bytes (hex, addresses at left):
 
 ```
 // node: R.e[0].entry[0]
@@ -586,9 +591,9 @@ TRON bytes (hex, offsets at left):
 0057: 1A 00 00 00                       kind=0=branch; key_type=1=map; len=0b11000=24
 005B: 03 00 00 00                       entry_count=3
 005F: 41 08 00 00                       bitmap=0b100001000001
-0063: 00 00 00 00                       entry[0] offset = @0000
-0067: 33 00 00 00                       entry[1] offset = @0033
-006B: 43 00 00 00                       entry[2] offset = @0043
+0063: 00 00 00 00                       entry[0] address = @0000
+0067: 33 00 00 00                       entry[1] address = @0033
+006B: 43 00 00 00                       entry[2] address = @0043
 // node: R.e[1].entry[0]
 006F: 17 00 00 00                       kind=1=leaf; key_type=1=map; len=0b10100=20
 0073: 01 00 00 00                       entry_count=1
@@ -618,24 +623,24 @@ TRON bytes (hex, offsets at left):
 00BA: 1A 00 00 00                       kind=0=branch; key_type=1=map; len=0b11000=24
 00BE: 03 00 00 00                       entry_count=3
 00C2: 41 08 00 00                       bitmap=0b100001000001
-00C6: 6F 00 00 00                       entry[0] offset = @006F
-00CA: 96 00 00 00                       entry[1] offset = @0096
-00CE: A6 00 00 00                       entry[2] offset = @00A6
+00C6: 6F 00 00 00                       entry[0] address = @006F
+00CA: 96 00 00 00                       entry[1] address = @0096
+00CE: A6 00 00 00                       entry[2] address = @00A6
 // node: Root
 00D2: 15 00 00 00                       kind=1=leaf; key_type=0=arr; len=0b10100=20
 00D6: 02 00 00 00                       entry_count=2
 00DA: 00                                shift=0
 00DB: 30 00                             bitmap=0b11
 00DD: 02 00 00 00                       length
-00E1: F1 57                             entry[0] offset = @0057
-00E3: F1 BA                             entry[1] offset = @00BA
+00E1: F1 57                             entry[0] address = @0057
+00E3: F1 BA                             entry[1] address = @00BA
 // trailer
-00E5: D2 00 00 00                       root offset = @00D2
-00E9: 00 00 00 00                       prev root offset = 0 (i.e., this is canonical enc.)
+00E5: D2 00 00 00                       root address = @00D2
+00E9: 00 00 00 00                       prev root address = 0 (i.e., this is canonical enc.)
 00ED: 56 4E 54 58                       magic "TRON" (i.e., this is a tree document)
 ```
 
-## JSON mapping
+## 12. JSON mapping
 
 This section defines a deterministic mapping between TRON values and JSON
 for interop and fixtures. It matches the reference implementation.
@@ -670,7 +675,7 @@ Notes:
 - The `b64:` prefix is reserved for binary encoding in JSON. If a string
   begins with `b64:` but is not valid base64, it remains a `txt` string.
 
-## Optional addendum: implementation features
+## 13. Optional addendum: implementation features
 
 The following features are not required for core TRON format compatibility.
 They are documented here because some implementations (for example, the Go

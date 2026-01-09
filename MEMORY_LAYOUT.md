@@ -76,18 +76,18 @@ Minimum size: 5 bytes (nil value + magic)
 ### Trailer Layout (last 12 bytes)
 
 Tree documents have a longer trailer, they still end in 4 magic bytes but they
-also include offsets required to be able to walk the tree:
+also include addresses required to be able to walk the tree:
 
-| Offset | Size | Field                         |
-| ------ | ---- | ----------------------------- |
-| 0      | 4    | Root node offset (u32 LE)     |
-| 4      | 4    | Previous root offset (u32 LE) |
-| 8      | 4    | Magic `TRON`                  |
+| Offset | Size | Field                          |
+| ------ | ---- | ------------------------------ |
+| 0      | 4    | Root node address (u32 LE)     |
+| 4      | 4    | Previous root address (u32 LE) |
+| 8      | 4    | Magic `TRON`                   |
 
 The trailer enables:
 
 - **Copy-on-write updates**: append new nodes, update root pointer
-- **History tracking**: previous root offsets form a linked list
+- **History tracking**: previous root addresses form a linked list
 
 ### Format
 
@@ -96,7 +96,7 @@ byte0 ... byteN-4  byteN-11  byteN-10  byteN-9  byteN-8  byteN-7  byteN-6  byteN
                                                                                              0x54     0x52     0x4f     0x4e
                                                                                               'T'      'R'      'O'      'N'
 └───────┬───────┘  └─────────────────┬────────────────┘ └────────────────┬────────────────┘  └───────────────┬──────────────┘
-node data section             root node offset                prev. root node offset                   magic trailer
+node data section             root node address                prev. root node address                   magic trailer
 ```
 
 Minimum size: 20 bytes (empty map leaf: 8-byte node + 12-byte trailer).
@@ -127,8 +127,8 @@ Bit layout: 7 6 5 4 3 2 1 0
 | f64  | `00000011` | IEEE-754 64-bit float (a.k.a. "double") | 8 bytes, little-endian                                    |
 | txt  | `LLLLP100` | UTF-8 string                            | N (1-8) bytes for L (if P=0 because L>15) + L UTF-8 bytes |
 | bin  | `LLLLP101` | Raw bytes                               | N (1-8) bytes for L (if P=0 because L>15) + L raw bytes   |
-| arr  | `000MM110` | Array node offset (u32)                 | M+1 bytes, little-endian                                  |
-| map  | `000MM111` | Map node offset (u32)                   | M+1 bytes, little-endian                                  |
+| arr  | `000MM110` | Array node address (u32)                | M+1 bytes, little-endian                                  |
+| map  | `000MM111` | Map node address (u32)                  | M+1 bytes, little-endian                                  |
 
 ### Length Encoding (txt, bin)
 
@@ -154,26 +154,26 @@ txt "ab":       0x2C 61 62                     (packed len=2)
 txt (long):     0x14 20 <32 bytes...>          (unpacked, 1-byte len=32)
 bin 0xDDEEFF:   0x3D DD EE FF                  (packed len=3)
 bin (long):     0x25 00 01 <256 bytes...>      (unpacked, 2-byte len=256)
-arr:            0x06 00                        arr w/ offset 0
-map:            0x16 00 00 00 01               map w/ offset 16,777,216
+arr:            0x06 00                        arr w/ address 0
+map:            0x16 00 00 00 01               map w/ address 16,777,216
 ```
 
 ### Examples showing arr/map length
 
 ```
-arr w/ offset 0 (len = L+1 = 0+1 = 1)
+arr w/ address 0 (len = L+1 = 0+1 = 1)
 00000110 00000000
 
-arr w/ offset 256 (len = L+1 = 1+1 = 2)
+arr w/ address 256 (len = L+1 = 1+1 = 2)
 00001110 00000000 00000001
 
-arr w/ offset 65,536 (len = L+1 = 1+2 = 3)
+arr w/ address 65,536 (len = L+1 = 1+2 = 3)
 00010110 00000000 00000000 00000001
 
-arr w/ offset 16,777,216 (len = L+1 = 1+3 = 4)
+arr w/ address 16,777,216 (len = L+1 = 1+3 = 4)
 00011110 00000000 00000000 00000000 00000001
 
-arr w/ offset 4,294,967,296 (len = L+1 = 1+3 = 4)
+arr w/ address 4,294,967,296 (len = L+1 = 1+3 = 4)
 00011110 11111111 11111111 11111111 11111111
 ```
 
@@ -237,7 +237,7 @@ you only go down to the level of the first non-collision.
 | ------ | ------ | ----------------------------------------------------------------- |
 | 0      | 8      | Node header                                                       |
 | 8      | 4      | Bitmap (u32 LE) - slots present (note upper 2 bytes are always 0) |
-| 12     | 4 \* n | Child offsets (u32 LE each)                                       |
+| 12     | 4 \* n | Child addresses (u32 LE each)                                     |
 
 ```
 Branch node:
@@ -250,11 +250,11 @@ Branch node:
     └───────┬───────┘  └───────┬───────┘
         always 0           16 slots
 
-  Child offsets
+  Child addresses
     byte15   byte14   byte13   byte12    byte19   byte18   byte17   byte16    ...
     XXXXXXXX XXXXXXXX XXXXXXXX XXXXXXXX  XXXXXXXX XXXXXXXX XXXXXXXX XXXXXXXX  ...
     └────────────────┬────────────────┘  └────────────────┬────────────────┘
-               child 0 offset                       child 1 offset            ...
+               child 0 address                       child 1 address            ...
 ```
 
 Where `n = popcount(bitmap)`
@@ -295,18 +295,18 @@ continues until keys diverge or max depth (7) is reached. Keys with identical
 ### Example: Map Branch
 
 ```
-Offset 0x00:
+Address 0x00:
   0C 00 00 00    node_len=12, branch, map
   02 00 00 00    entry_count=2
   03 00 00 00    bitmap=0x0003 (slots 0,1 occupied)
-  20 00 00 00    child[0] offset
-  40 00 00 00    child[1] offset
+  20 00 00 00    child[0] address
+  40 00 00 00    child[1] address
 ```
 
 ### Example: Map Leaf
 
 ```
-Offset 0x00:
+Address 0x00:
   13 00 00 00                   node_len=19, leaf, map
   01 00 00 00                   entry_count=1
   2C 61                         txt "a" (packed len=1)
@@ -333,13 +333,13 @@ the root, the shift is decreased by 4.
 
 ### Branch Node Layout
 
-| Offset | Size   | Field                       |
-| ------ | ------ | --------------------------- |
-| 0      | 8      | Node header                 |
-| 8      | 1      | Shift (u8)                  |
-| 9      | 2      | Bitmap (u16 LE)             |
-| 11     | 4      | Length (u32 LE)             |
-| 15     | 4 \* n | Child offsets (u32 LE each) |
+| Offset | Size   | Field                         |
+| ------ | ------ | ----------------------------- |
+| 0      | 8      | Node header                   |
+| 8      | 1      | Shift (u8)                    |
+| 9      | 2      | Bitmap (u16 LE)               |
+| 11     | 4      | Length (u32 LE)               |
+| 15     | 4 \* n | Child addresses (u32 LE each) |
 
 ### Leaf Node Layout
 
@@ -357,7 +357,7 @@ indices are `0..length-1`). Non-root nodes must store 0.
 ### Example: Array Leaf
 
 ```
-Offset 0x00:
+Address 0x00:
   1D 00 00 00                   node_len=28, leaf, arr
   02 00 00 00                   entry_count=2
   00                            shift=0
@@ -408,7 +408,7 @@ This section shows the complete memory layout of a tree document representing:
 ### Memory Layout (read bottom to top)
 
 ```
-Offset    Contents
+Address    Contents
 ───────────────────────────────────────────────────────────────────────────────
 
 0x00      ┌───────────────────────────────────────────────────────────────────┐
@@ -425,7 +425,7 @@ Offset    Contents
           │  14 00 00 00           :  node_len=20, flags=03 (leaf, map)       │
           │  01 00 00 00           :  entry_count=1                           │
           │  6C 73 63 6F 72 65 73  :  txt "scores" (packed len=6)             │
-          │  06 00                 :  arr ref (packed 1-byte offset=0x00)     │
+          │  06 00                 :  arr ref (packed 1-byte address=0x00)    │
           │  00 00                 :  padding to 4-byte boundary              │
 0x34      ├───────────────────────────────────────────────────────────────────┤
           │                    Map Leaf Node ("name")                         │
@@ -439,12 +439,12 @@ Offset    Contents
           │  14 00 00 00  :  node_len=20, flags=02 (branch, map)              │
           │  02 00 00 00  :  entry_count=2                                    │
           │  22 00 00 00  :  bitmap=0x0022 (slots 1,5)                        │
-          │  34 00 00 00  :  child[0] → 0x34 (slot 1 offset: "name" leaf)     │
-          │  22 00 00 00  :  child[1] → 0x22 (slot 5 offset: "scores" leaf)   │
+          │  34 00 00 00  :  child[0] → 0x34 (slot 1 address: "name" leaf)    │
+          │  22 00 00 00  :  child[1] → 0x22 (slot 5 address: "scores" leaf)  │
 0x5D      ├───────────────────────────────────────────────────────────────────┤
           │                           Trailer                                 │
-          │  44 00 00 00  :  root_offset=0x49                                 │
-          │  00 00 00 00  :  prev_root_offset=0 (no history)                  │
+          │  44 00 00 00  :  root_address=0x49                                │
+          │  00 00 00 00  :  prev_root_address=0 (no history)                 │
           │  54 52 4F 4E  :  magic "TRON"                                     │
 0x68      └───────────────────────────────────────────────────────────────────┘
 
@@ -469,14 +469,14 @@ Total: 104 bytes (0x68)
         │                    = popcount(0x2)                         │
         │                    = popcount(0b10)                        │
         │      ∴ child index = 1                                     │
-        │    Follow child[1] → offset 0x22                           │
+        │    Follow child[1] → address 0x22                           │
         └────────────────────────────────────────────────────────────┘
                                         │
                                         ▼
         ┌────────────────────────────────────────────────────────────┐
         │ 2. At Map Leaf 0x22: scan entries for key "scores"         │
         │    Found!                                                  │
-        │    Value = arr ref @ offset 0x00                           │
+        │    Value = arr ref @ address 0x00                           │
         └────────────────────────────────────────────────────────────┘
                                         │
                                         ▼
@@ -556,9 +556,9 @@ When modifying a tree document:
 1. Read current root from trailer
 2. Traverse to target node
 3. Build new node with updated content
-4. Rebuild ancestor nodes with new child offsets
+4. Rebuild ancestor nodes with new child addresses
 5. Append all new nodes to end of data
-6. Write new trailer with updated root offset
+6. Write new trailer with updated root address
 
 Old data remains in the file. Readers of the current version ignore it
 (following only the current root pointer), but historical versions remain
@@ -589,7 +589,7 @@ updates (append-only constraint forces children to be written before parents, so
 root is always last before trailer).
 
 This means you can traverse the full history chain by finding each trailer at
-`root_offset + node_len`.
+`root_address + node_len`.
 
 ### Algorithm
 
@@ -597,14 +597,14 @@ This means you can traverse the full history chain by finding each trailer at
 history_walk(document):
   trailer = read_trailer(document)  // last 12 bytes
 
-  while trailer.prev_root_offset != 0:
+  while trailer.prev_root_address != 0:
     // Read the previous root node header to get its length
-    prev_root = read_node_header(trailer.prev_root_offset)
+    prev_root = read_node_header(trailer.prev_root_address)
     node_len = prev_root.header & ~0x3
 
     // The previous trailer immediately follows that root node
-    prev_trailer_offset = trailer.prev_root_offset + node_len
-    trailer = read_trailer_at(prev_trailer_offset)
+    prev_trailer_address = trailer.prev_root_address + node_len
+    trailer = read_trailer_at(prev_trailer_address)
 
     yield trailer  // or process historical state
 ```
@@ -680,8 +680,8 @@ Document
 
   Tree
     [Nodes...] [Trailer]
-                ├─ root_offset_u32
-                ├─ prev_offset_u32
+                ├─ root_address_u32
+                ├─ prev_address_u32
                 └─ "TRON"
 
 Node (map/arr)
