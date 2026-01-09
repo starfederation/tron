@@ -1,25 +1,23 @@
 # TRie Object Notation (TRON) Spec (draft)
 
-| Revision | Date       | Author                    | Info                                        |
-| -------- | ---------- | ------------------------- | ------------------------------------------- |
-| 0        | 2025-12-30 | @delaneyj                 | Initial design                              |
-| 1        | 2026-01-04 | @delaneyj                 | Add JSON mapping                            |
-| 2        | 2026-01-04 | @delaneyj, @oliverlambson | Fix xxh32 spec                              |
-| 3        | 2026-01-05 | @delaneyj                 | Add JSON Merge Patch and JMESPath           |
-| 4        | 2026-01-08 | @oliverlambson            | Annotate byte-level TRON example            |
-| 5        | 2026-01-08 | @oliverlambson            | Reserve full u32 for HAMT bitmap            |
-| 6        | 2026-01-08 | @oliverlambson            | Revise value tag header format              |
-| 7        | 2026-01-09 | @oliverlambson            | Remove unnecessary reserved bytes           |
-| 8        | 2026-01-10 | @oliverlambson            | Be explicit that all addresses are absolute |
+| Revision | Date       | Author                    | Info                                                |
+| -------- | ---------- | ------------------------- | --------------------------------------------------- |
+| 0        | 2025-12-30 | @delaneyj                 | Initial design                                      |
+| 1        | 2026-01-04 | @delaneyj                 | Add JSON mapping                                    |
+| 2        | 2026-01-04 | @delaneyj, @oliverlambson | Fix xxh32 spec                                      |
+| 3        | 2026-01-05 | @delaneyj                 | Add JSON Merge Patch and JMESPath                   |
+| 4        | 2026-01-08 | @oliverlambson            | Annotate byte-level TRON example                    |
+| 5        | 2026-01-08 | @oliverlambson            | Reserve full u32 for HAMT bitmap                    |
+| 6        | 2026-01-08 | @oliverlambson            | Revise value tag header format                      |
+| 7        | 2026-01-09 | @oliverlambson            | Remove unnecessary reserved bytes                   |
+| 8        | 2026-01-10 | @oliverlambson            | Be explicit that all addresses are absolute         |
+| 9        | 2026-01-11 | @oliverlambson            | Use a single document type for scalar & tree values |
 
 This document defines the binary format for TRie Object Notation. It is intended to be compatible with JSON primitives while using HAMT (for maps) and vector tries (for arrays) to support fast in-place modifications without rewriting the entire document. The format targets transport and embedding as a single blob in databases or KV stores, not a database or storage engine itself.
 
 ## 1. Document layout
 
-A TRie Object Notation (TRON) document is a self-contained blob and can be stored in a file, a database cell, or sent over the wire. It is one of:
-
-- Scalar document: a single value record followed by the scalar terminator `NORT`.
-- Tree document: HAMT/vector trie nodes and value payloads followed by the root record trailer.
+A TRie Object Notation (TRON) document is a self-contained blob and can be stored in a file, a database cell, or sent over the wire. It is a tree of nodes (value payloads) followed by a root footer.
 
 All multi-byte values are little-endian.
 
@@ -27,11 +25,11 @@ All multi-byte values are little-endian.
 
 TRON document trees are traversed by following "address" values for bytes. An address is the absolute position of a byte within the docuement's byte buffer. Addresses are u32 values starting at 0x00 for the first byte of the buffer.
 
-## 3. Root record trailer
+## 3. Root footer
 
-The root record trailer lives at the end of a tree document (last 12 bytes). Writers append new nodes, then update the root record with the new root address. The previous root address allows walking the history backward. The magic `TRON` is the last 4 bytes of the document.
+The root footer lives at the end of a tree document (last 12 bytes). Writers append new nodes, then append a new root footer with the new root address. The previous root address allows walking the history backward. The magic `TRON` is the last 4 bytes of the document.
 
-Trailer layout (from start of trailer):
+Root footer layout (from start of footer):
 
 ```
 Offset  Size  Field
@@ -42,28 +40,19 @@ Offset  Size  Field
 
 Read flow:
 
-- For tree documents, read the last 12 bytes and parse the trailer (magic is at the end).
-- Read the root node at the address; the node header encodes its length.
+- Read the last 12 bytes and parse the footer (magic is at the end).
+- Read the root node at the address; the node's header encodes its length.
 
 Write flow (copy-on-write):
 
 - Append new/updated nodes and values.
 - Set prev root address to the prior root address.
-- Update the root address in the trailer.
-- Write the trailer last at the end of the document (so readers always see a complete root).
+- Update the root address in the footer.
+- Write the footer last at the end of the document (so readers always see a complete root).
 
-## 4. Scalar terminator
+## 4. Node tag header
 
-Scalar documents (top-level value is not `arr` or `map`) end with a 4-byte terminator `NORT`. The value record begins at byte 0 and runs up to the terminator. The terminator is not part of any payload.
-
-Readers can distinguish formats by checking the tail:
-
-- If the last 4 bytes are `NORT`, it is a scalar document.
-- If the last 4 bytes are `TRON`, it is a tree document with a root record trailer.
-
-## 5. Value tag header
-
-Each value record begins with a 1-byte tag header. The top 3 bits encode the type, the lower 5 bits are type-specific.
+Each node begins with a 1-byte tag header. The top 3 bits encode the type, the lower 5 bits are type-specific.
 
 | Field         | Bits            |
 | ------------- | --------------- |
@@ -81,7 +70,7 @@ Each value record begins with a 1-byte tag header. The top 3 bits encode the typ
 
 `txt` and `bin` use all 5 high bits: bit 3 is the isPacked flag. If isPacked=1, the high 4 bits hold the inline length 0..15. If isPacked=0, the high 4 bits (N) are the number of bytes that follow to encode the payload length; N must be 1..8. Read N bytes (little-endian) to get L. L is the byte length of the payload that follows.
 
-`arr` and `map` use bit 3 and 4 encode M, where M+1 is the byte length of the payload that follows, the high 4 bits must be 0.
+`arr` and `map` use bits 3-4 to encode M, and bit 3 is the branch/leaf flag (B). The M+1 bytes following the tag store node_len, the total size of the node in bytes (including tag and length field). The high 2 bits must be 0.
 
 Type layouts and examples:
 
@@ -126,34 +115,50 @@ Example: 3 bytes `0xAA 0xBB 0xCC` -> tag `0x3D`, payload `0xAA 0xBB 0xCC`
 
 ### arr (0b110)
 
-Tag bits: `000ll110` where `ll + 1` is payload length. Payload is a node address (u32) encoded in L+1 bytes (1..4), little-endian.
+Tag bits: `00MMB110` where `B` is branch/leaf flag (0=branch, 1=leaf). Payload is: length encoded in `MM + 1` bytes; entry count (u32); shift (u8); bitmap (u16); if branch: u32 LE addresses of leaf nodes (entry \*count \* 4 bytes); if leaf: u32 LE addresses of value nodes (entry_count \* 4 bytes).
 
-Example: root node at address `0x10` -> tag `0x06`, payload `0x10`
+Example: leaf arr with one value node at address `0x10` -> tag `0x0E`, payload `0x0D 0x01 0x00 0x00 0x00 0x00 0x10 0x00 0x00 0x10 0x00 0x00 0x00`
 
 ### map (0b111)
 
-Tag bits: `000ll111` where `ll + 1` is payload length. Payload is a node address (u32) encoded in L+1 bytes (1..4), little-endian.
+Tag bits: `00MMB111` where `B` is branch/leaf flag (0=branch, 1=leaf). Payload is: length encoded in `MM + 1` bytes; entry count (u32); if branch: bitmap (u32) and u32 LE addresses of child nodes (entry \*count \* 4 bytes); if leaf: u32 LE addresses of key/value pairs (2 \* entry_count \* 4 bytes).
 
-Example: root node at address `0x20` -> tag `0x07`, payload `0x20`
+Example: leaf map with key node at address `0x20` and value node at address `0x30` -> tag `0x0F`, payload `0x0E 0x01 0x00 0x00 0x00 0x20 0x00 0x00 0x00 0x30 0x00 0x00 0x00`
 
-## 6. HAMT (map) and vector trie (arr) nodes
+## 5. HAMT (map) and vector trie (arr) nodes
 
-Maps use a 16-way HAMT keyed by `xxh32` of the UTF-8 key bytes (seed=0). Arrays use a 16-way vector trie keyed by index bits. Nodes are variable-size and referenced by the node address stored in `arr` and `map` value records.
+Maps use a 16-way HAMT keyed by `xxh32` of the UTF-8 key bytes (seed=0). Arrays use a 16-way vector trie keyed by index bits. Nodes are variable-size and referenced by the node address stored in `arr` and `map` parent node records.
 
-Node header:
+### Map nodes (HAMT)
+
+Map branch node layout:
 
 ```
 Offset  Size  Field
-0       4     Node length and flags (u32)
-4       4     Entry count (u32)
+0       1     Node tag header
+1       M+1   Node length
+M+2     4     Entry count (u32) [n] - must equal popcount(bitmap)
+M+6     4     Bitmap (u32) - note since there are max 16 slots, the upper 2 bytes are always 0
+M+10    4*n   Addresses of child leaves/branches (n * u32), ordered by slot index
 ```
 
-- Bit 0 of the u32 indicates node kind: 0=branch, 1=leaf.
-- Bit 1 indicates key type: 0=arr, 1=map.
-- The remaining bits encode the node length in bytes (node_len = header_u32 & ~0x3).
-- node_len includes the header, all entries, and optional zero padding. node_len must be a multiple of 4.
+Map leaf node layout:
 
-### Map nodes (HAMT)
+```
+Offset  Size  Field
+0       1     Node tag header
+1       M+1   Node length
+M+2     4     Entry count (u32) [n] - number of key/value pairs
+M+6     8*n   Addresses of key/value pairs (n * u32+u32), ordered by key UTF-8 bytes (keys are unique within node). Key records are always a txt node. Value records can be any node type.
+```
+
+Hash collisions:
+
+- When a leaf contains a single key and a new key lands in the same slot at this depth, the leaf is split into a branch and the two keys are placed in children based on the next hash nibble.
+- This splitting continues until the keys diverge or max depth is reached.
+- If two different keys have identical 32-bit hashes (full path collision), they cannot diverge; they are stored together in a single leaf at max depth.
+- Lookups always compare full UTF-8 key bytes within the leaf to confirm equality (hash match alone is not sufficient).
+- Map lookup/update/remove are O(d + c), where d is depth (<= 8 for 32-bit hashes with 4-bit chunks) and c is the number of colliding keys in the leaf bucket.
 
 Hashing:
 
@@ -217,36 +222,33 @@ All arithmetic is modulo 2^32. `read_u32_le` reads 4 bytes little-endian.
 
 Reference implementation: xxh32 MUST match Cyan4973/xxHash (release branch). Canonical test vectors are available in `shared/testdata/vectors/xxhash_sanity_test_vectors.json`, derived from `tests/sanity_test_vectors.h` in that repo.
 
-Branch node layout (map):
-
-```
-Offset  Size  Field
-8       4     Bitmap (u32) - note since there are max 16 slots, the upper 2 bytes are always 0
-12      4*n   Child addresses (u32), ordered by slot index
-```
-
-- `entry_count` must equal popcount(bitmap).
-
-Leaf node layout (map):
-
-```
-Offset  Size  Field
-8       ?     Repeated entries: txt key record + value record
-```
-
-- `entry_count` is the number of key/value pairs.
-- Key record tag must be `txt`; payload is the UTF-8 key bytes.
-- Leaf entries are ordered by UTF-8 key bytes and keys are unique.
-
-Hash collisions:
-
-- When a leaf contains a single key and a new key lands in the same slot at this depth, the leaf is split into a branch and the two keys are placed in children based on the next hash nibble.
-- This splitting continues until the keys diverge or max depth is reached.
-- If two different keys have identical 32-bit hashes (full path collision), they cannot diverge; they are stored together in a single leaf at max depth.
-- Lookups always compare full UTF-8 key bytes within the leaf to confirm equality (hash match alone is not sufficient).
-- Map lookup/update/remove are O(d + c), where d is depth (<= 8 for 32-bit hashes with 4-bit chunks) and c is the number of colliding keys in the leaf bucket.
-
 ### Array nodes (vector trie)
+
+Array branch node layout:
+
+```
+Offset  Size  Field
+0       1     Node tag header
+1       M+1   Node length
+M+2     4     Entry count (u32) [n] - must equal popcount(bitmap)
+M+6     1     Shift (u8)
+M+7     2     Bitmap (u16)
+M+9     4     Length (u32)
+M+13    4*n   Addresses of child nodes (n * u32), in slot order.
+```
+
+Array leaf node layout:
+
+```
+Offset  Size  Field
+0       1     Node tag header
+1       M+1   Node length
+M+2     4     Entry count (u32) [n] - must equal popcount(bitmap)
+M+6     1     Shift (u8)
+M+7     2     Bitmap (u16)
+M+9     4     Length (u32)
+M+13    4*n   Addresses of value nodes (n * u32), in slot order.
+```
 
 Indexing:
 
@@ -254,19 +256,8 @@ Indexing:
 - shift is measured in bits and must be a multiple of 4.
 - index is a u32.
 
-Array node layout (arr):
+Conditions:
 
-```
-Offset  Size  Field
-8       1     Shift (u8)
-9       2     Bitmap (u16)
-11      4     Length (u32)
-15      ?     Entries in slot order
-```
-
-- `entry_count` must equal popcount(bitmap).
-- For branch nodes, entries are `u32 child_address`.
-- For leaf nodes, entries are value records.
 - Root node shift is chosen so the highest set bits of the maximum index are covered; for small arrays, shift may be 0.
 - Child nodes use `shift - 4`. Leaf nodes must have shift=0.
 - Array length is stored in the root node (shift may be 0). Valid indices are `0..length-1`.
@@ -276,7 +267,7 @@ Offset  Size  Field
 - Array lookup/set/append are O(d), where d is depth (<= 8 for u32 indices with 4-bit chunks).
 - Arrays may be sparse during updates; missing indices are treated as `nil` for logical operations. Canonical encoding must densify arrays by rewriting into a new document (filling missing indices with `nil`).
 
-## 7. Update algorithms (pseudocode)
+## 6. Update algorithms (pseudocode)
 
 The following pseudocode describes logical updates. Implementations must use copy-on-write as described in section 8.
 
@@ -436,24 +427,23 @@ Root growth:
 
 - If index requires a higher shift than the current root, create a new root with increased shift and insert the old root as a child.
 
-## 8. Canonical encoding
+## 7. Canonical encoding
 
 Canonical encoding is defined as a full vacuum/re-encode of a logical JSON value into a new TRON document. The result must be byte-for-byte deterministic.
 
 Rules:
 
 - Use the shortest valid tag encoding for every value:
-  - If inline packing is possible (txt/bin/arr/map), use it.
+  - If inline packing is possible (txt/bin), use it.
   - Otherwise, use the minimal byte length L and minimal length-of-length N.
   - For `i64` and `f64`, payloads are fixed 8 bytes.
-  - For `arr`/`map` node addresses, use the minimal L (1..4).
 - For maps, build a 16-way HAMT from the full key set using xxh32 (seed=0). Nodes are constructed deterministically by slot order at each depth. Leaf nodes contain collision buckets only at max depth.
 - For arrays, build a 16-way vector trie with the minimal root shift that covers the maximum index (length-1). Leaf nodes must have shift=0. Indices are 0..length-1; missing indices are not allowed (use `nil` explicitly).
 - Serialize nodes in depth-first post-order, visiting slots in ascending order. Children are written before parents.
 - The root node is the last node written; root address points to that node. The trailer is written last.
 - For canonical output, the root trailer prev root address must be zero.
 
-## 9. Copy-on-write updates
+## 8. Copy-on-write updates
 
 TRON is append-only at the byte level. Writers must not modify existing bytes in place.
 
@@ -463,8 +453,8 @@ Update flow:
 - Build a new leaf node with the updated entry.
 - Rebuild ancestor nodes up to a new root, updating child addresses to point at newly appended nodes.
 - Append all newly built nodes and any new value payloads.
-- Append a new trailer with the updated root/prev root addresses; the trailer must be the final 12 bytes.
-- Old nodes and old trailers remain as garbage and are ignored by readers.
+- Append a new root footer with the updated root/prev root addresses; the trailer must be the final 12 bytes.
+- Old nodes and old root footers remain: they are ignored by readers unless traversing the history.
 
 Update behavior:
 
@@ -472,7 +462,7 @@ Update behavior:
 - Map set/delete are structural updates: rewrite the affected leaf and its ancestor path.
 - Branch nodes update their bitmaps and entry counts; empty branches are removed.
 
-## 10. Patch format (JSON Patch semantics)
+## 9. Patch format (JSON Patch semantics)
 
 TRON Patch applies JSON Patch semantics (RFC 6902) with a binary-friendly encoding. A patch is a TRON `arr` of operation records. Each operation record is a TRON `map` with fields:
 
@@ -534,13 +524,15 @@ Complexity:
 
 - O(k \* d) for k updated keys and depth d in the map trie, with structural reuse of unchanged subtrees.
 
-## 11. Byte-level example (canonical TRON tree document)
+## 10. Byte-level example (canonical TRON document)
 
 Encode this JSON patch instruction in TRON:
 
 - JSON Patch:
   - add /a/0 = 1
   - replace /b = "hi"
+
+**JSON representation:**
 
 ```json
 [
@@ -560,87 +552,208 @@ Encode this JSON patch instruction in TRON:
 _Note that in the representation of the json patch above, the paths have been
 split and the ops have been enumerated._
 
-TRON bytes (hex, addresses at left):
+**TRON logical structure:**
+
+```mermaid
+flowchart TB
+      root["Array Leaf (Root)<br/>0xED<br/>[0] → @0x6A<br/>[1] → @0xD7"]
+
+      obj0["Map Branch<br/>0x6A<br/>slot[0] → @0x0F<br/>slot[6] → @0x42<br/>slot[11] → @0x5C"]
+
+      obj1["Map Branch<br/>0xD7<br/>slot[0] → @0x89<br/>slot[6] → @0xAF<br/>slot[11] → @0xC9"]
+
+      %% Object 0 map leaves
+      leaf0_value["Map Leaf<br/>0x0F<br/>key → @0x00<br/>val → @0x06"]
+      leaf0_path["Map Leaf<br/>0x42<br/>key → @0x28<br/>val → @0x2D"]
+      leaf0_op["Map Leaf<br/>0x5C<br/>key → @0x50<br/>val → @0x53"]
+
+      %% Object 0 keys/values
+      key0_value["String<br/>0x00<br/>&quot;value&quot;"]
+      val0_value["Int<br/>0x06<br/>1"]
+
+      key0_path["String<br/>0x28<br/>&quot;path&quot;"]
+      val0_path["Array Leaf<br/>0x2D<br/>[0] → @0x1D<br/>[1] → @0x1F"]
+
+      path0_0["String<br/>0x1D<br/>&quot;a&quot;"]
+      path0_1["Int<br/>0x1F<br/>0"]
+
+      key0_op["String<br/>0x50<br/>&quot;op&quot;"]
+      val0_op["Int<br/>0x53<br/>0"]
+
+      %% Object 1 map leaves
+      leaf1_value["Map Leaf<br/>0x89<br/>key → @0x80<br/>val → @0x86"]
+      leaf1_path["Map Leaf<br/>0xAF<br/>key → @0x99<br/>val → @0x9E"]
+      leaf1_op["Map Leaf<br/>0xC9<br/>key → @0xBD<br/>val → @0xC0"]
+
+      %% Object 1 keys/values
+      key1_value["String<br/>0x80<br/>&quot;value&quot;"]
+      val1_value["String<br/>0x86<br/>&quot;hi&quot;"]
+
+      key1_path["String<br/>0x99<br/>&quot;path&quot;"]
+      val1_path["Array Leaf<br/>0x9E<br/>[0] → @0x97"]
+
+      path1_0["String<br/>0x97<br/>&quot;b&quot;"]
+
+      key1_op["String<br/>0xBD<br/>&quot;op&quot;"]
+      val1_op["Int<br/>0xC0<br/>2"]
+
+      %% Connections
+      root --> obj0
+      root --> obj1
+
+      obj0 --> leaf0_value
+      obj0 --> leaf0_path
+      obj0 --> leaf0_op
+
+      leaf0_value --> key0_value
+      leaf0_value --> val0_value
+
+      leaf0_path --> key0_path
+      leaf0_path --> val0_path
+
+      val0_path --> path0_0
+      val0_path --> path0_1
+
+      leaf0_op --> key0_op
+      leaf0_op --> val0_op
+
+      obj1 --> leaf1_value
+      obj1 --> leaf1_path
+      obj1 --> leaf1_op
+
+      leaf1_value --> key1_value
+      leaf1_value --> val1_value
+
+      leaf1_path --> key1_path
+      leaf1_path --> val1_path
+
+      val1_path --> path1_0
+
+      leaf1_op --> key1_op
+      leaf1_op --> val1_op
+```
+
+**TRON bytes (hex, addresses at left):**
 
 ```
-// node: R.e[0].entry[0]
-0000: 1B 00 00 00                       kind=1=leaf; key_type=1=map; len=0b11000=24
-0004: 01 00 00 00                       entry_count=1
-0008: 5C 76 61 6C 75 65                 key="value"::txt
-000E: 02 01 00 00 00 00 00 00 00 00     value=1::i64
-// node: R.e[0].e[1].value["path"]
-0018: 1D 00 00 00                       kind=1=leaf; key_type=0=arr; len=0b11100=28
-001C: 02 00 00 00                       entry_count=2
-0020: 00                                shift=0
-0021: 03 00                             bitmap=0b11
-0023: 02 00 00 00                       length=2
-0027: 1C 61                             "a"::txt
-0029: 02 00 00 00 00 00 00 00 00 00     0::i64
-// node: R.e[0].entry[1]
-0033: 13 00 00 00                       kind=1=leaf; key_type=1=map; len=0b10000=16
-0037: 01 00 00 00                       entry_count=1
-003B: 4C 70 61 74 68                    key="path"::txt
-0040: 06 18                             value=arr @0018
-0042: 00                                zero padding
-// node: R.e[0].entry[2]
-0043: 17 00 00 00                       key=1=leaf; key_type=1=map; len=0b10100=20
-0049: 01 00 00 00                       entry_count=1
-004B: 2C 6F 70                          key="op"::txt
-004E: 02 00 00 00 00 00 00 00 00        value=0::i64
-// node: R.entry[0]
-0057: 1A 00 00 00                       kind=0=branch; key_type=1=map; len=0b11000=24
-005B: 03 00 00 00                       entry_count=3
-005F: 41 08 00 00                       bitmap=0b100001000001
-0063: 00 00 00 00                       entry[0] address = @0000
-0067: 33 00 00 00                       entry[1] address = @0033
-006B: 43 00 00 00                       entry[2] address = @0043
-// node: R.e[1].entry[0]
-006F: 17 00 00 00                       kind=1=leaf; key_type=1=map; len=0b10100=20
-0073: 01 00 00 00                       entry_count=1
-0077: 5C 76 61 6C 75 65                 key="value"::txt
-007D: 2C 68 69                          value="hi"::txt
-0081: 00 00 00                          zero padding
-// node: R.e[1].e[1].value["path"]
-0083: 15 00 00 00                       kind=1=leaf; key_type=0=arr; len=0b10100=20
-0087: 01 00 00 00                       entry_count=1
-008B: 00                                shift=8
-008C: 01 00                             bitmap=0b1
-008E: 01 00 00 00                       length=1
-0092: 1C 62                             "b"::txt
-0094: 00 00                             zero padding
-// node: R.e[1].entry[1]
-0096: 13 00 00 00                       kind=1=leaf; key_type=1=map; len=0b10000=16
-009A: 01 00 00 00                       entry_count=1
-009E: 4C 70 61 74 68                    key="path"::txt
-00A3: 06 84                             value=arr @0083
-00A5: 00                                zero padding
-// node: R.e[1].entry[2]
-00A6: 17 00 00 00                       kind=1=leaf; key_type=1=map; len=0b10100=20
-00AA: 01 00 00 00                       entry_count=1
-00AE: 2C 6F 70                          key="op"::txt
-00B1: 02 02 00 00 00 00 00 00 00        value=2::i64
-// node: R.entry[1]
-00BA: 1A 00 00 00                       kind=0=branch; key_type=1=map; len=0b11000=24
-00BE: 03 00 00 00                       entry_count=3
-00C2: 41 08 00 00                       bitmap=0b100001000001
-00C6: 6F 00 00 00                       entry[0] address = @006F
-00CA: 96 00 00 00                       entry[1] address = @0096
-00CE: A6 00 00 00                       entry[2] address = @00A6
-// node: Root
-00D2: 15 00 00 00                       kind=1=leaf; key_type=0=arr; len=0b10100=20
-00D6: 02 00 00 00                       entry_count=2
-00DA: 00                                shift=0
-00DB: 30 00                             bitmap=0b11
-00DD: 02 00 00 00                       length
-00E1: F1 57                             entry[0] address = @0057
-00E3: F1 BA                             entry[1] address = @00BA
-// trailer
-00E5: D2 00 00 00                       root address = @00D2
-00E9: 00 00 00 00                       prev root address = 0 (i.e., this is canonical enc.)
-00ED: 56 4E 54 58                       magic "TRON" (i.e., this is a tree document)
+// Object 0: {"value": 1, "path": ["a", 0], "op": 0}
+// node: key "value"
+0000: 5C 76 61 6C 75 65                 "value"::txt (packed, len=5)
+// node: value 1
+0006: 02 01 00 00 00 00 00 00 00        1::i64
+// node: map leaf {"value": 1}
+000F: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
+0010: 0E                                node_len=14
+0011: 01 00 00 00                       entry_count=1
+0015: 00 00 00 00                       entry[0].key address   = @0000
+0019: 06 00 00 00                       entry[0].value address = @0006
+// node: "a" (path element)
+001D: 1C 61                             "a"::txt (packed, len=1)
+// node: 0 (path element)
+001F: 02 00 00 00 00 00 00 00 00        0::i64
+// node: key "path"
+0028: 4C 70 61 74 68                    "path"::txt (packed, len=4)
+// node: array ["a", 0]
+002D: 0E                                type=arr; B=1=leaf; M=0 (0b00_00_1_110)
+002E: 15                                node_len=21
+002F: 02 00 00 00                       entry_count=2
+0033: 00                                shift=0
+0034: 03 00                             bitmap=0b11 (slots 0,1)
+0036: 02 00 00 00                       length=2
+003A: 1D 00 00 00                       entry[0] address = @001D
+003E: 1F 00 00 00                       entry[1] address = @001F
+// node: map leaf {"path": [...]}
+0042: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
+0043: 0E                                node_len=14
+0044: 01 00 00 00                       entry_count=1
+0048: 28 00 00 00                       entry[0].key address   = @0028
+004C: 2D 00 00 00                       entry[0].value address = @002D
+// node: key "op"
+0050: 2C 6F 70                          "op"::txt (packed, len=2)
+// node: value 0
+0053: 02 00 00 00 00 00 00 00 00        0::i64
+// node: map leaf {"op": 0}
+005C: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
+005D: 0E                                node_len=14
+005E: 01 00 00 00                       entry_count=1
+0062: 50 00 00 00                       entry[0].key address   = @0050
+0066: 53 00 00 00                       entry[0].value address = @0053
+// node: map branch (object 0)
+006A: 07                                type=map; B=0=branch; M=0 (0b00_00_0_111)
+006B: 16                                node_len=22
+006C: 03 00 00 00                       entry_count=3
+0070: 41 08 00 00                       bitmap=0x0841 (slots 0,6,11)
+0074: 0F 00 00 00                       slot[0] address  = @000F (leaf "value")
+0078: 42 00 00 00                       slot[6] address  = @0042 (leaf "path")
+007C: 5C 00 00 00                       slot[11] address = @005C (leaf "op")
+
+// Object 1: {"value": "hi", "path": ["b"], "op": 2}
+// node: key "value"
+0080: 5C 76 61 6C 75 65                 "value"::txt (packed, len=5)
+// node: value "hi"
+0086: 2C 68 69                          "hi"::txt (packed, len=2)
+// node: map leaf {"value": "hi"}
+0089: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
+008A: 0E                                node_len=14
+008B: 01 00 00 00                       entry_count=1
+008F: 80 00 00 00                       entry[0].key address   = @0080
+0093: 86 00 00 00                       entry[0].value address = @0086
+// node: "b" (path element)
+0097: 1C 62                             "b"::txt (packed, len=1)
+// node: key "path"
+0099: 4C 70 61 74 68                    "path"::txt (packed, len=4)
+// node: array ["b"]
+009E: 0E                                type=arr; B=1=leaf; M=0 (0b00_00_1_110)
+009F: 11                                node_len=17
+00A0: 01 00 00 00                       entry_count=1
+00A4: 00                                shift=0
+00A5: 01 00                             bitmap=0b1 (slot 0)
+00A7: 01 00 00 00                       length=1
+00AB: 97 00 00 00                       entry[0] address = @0097
+// node: map leaf {"path": [...]}
+00AF: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
+00B0: 0E                                node_len=14
+00B1: 01 00 00 00                       entry_count=1
+00B5: 99 00 00 00                       entry[0].key address   = @0099
+00B9: 9E 00 00 00                       entry[0].value address = @009E
+// node: key "op"
+00BD: 2C 6F 70                          "op"::txt (packed, len=2)
+// node: value 2
+00C0: 02 02 00 00 00 00 00 00 00        2::i64
+// node: map leaf {"op": 2}
+00C9: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
+00CA: 0E                                node_len=14
+00CB: 01 00 00 00                       entry_count=1
+00CF: BD 00 00 00                       entry[0].key address   = @00BD
+00D3: C0 00 00 00                       entry[0].value address = @00C0
+// node: map branch (object 1)
+00D7: 07                                type=map; B=0=branch; M=0 (0b00_00_0_111)
+00D8: 16                                node_len=22
+00D9: 03 00 00 00                       entry_count=3
+00DD: 41 08 00 00                       bitmap=0x0841 (slots 0,6,11)
+00E1: 89 00 00 00                       slot[0] address  = @0089 (leaf "value")
+00E5: AF 00 00 00                       slot[6] address  = @00AF (leaf "path")
+00E9: C9 00 00 00                       slot[11] address = @00C9 (leaf "op")
+
+// Root array
+00ED: 0E                                type=arr; B=1=leaf; M=0 (0b00_00_1_110)
+00EE: 15                                node_len=21
+00EF: 02 00 00 00                       entry_count=2
+00F3: 00                                shift=0
+00F4: 03 00                             bitmap=0b11 (slots 0,1)
+00F6: 02 00 00 00                       length=2
+00FA: 6A 00 00 00                       entry[0] address = @006A (object 0)
+00FE: D7 00 00 00                       entry[1] address = @00D7 (object 1)
+
+// Root footer
+0102: ED 00 00 00                       root address = @00ED
+0106: 00 00 00 00                       prev root address = 0 (canonical)
+010A: 54 52 4F 4E                       magic "TRON"
 ```
 
-## 12. JSON mapping
+Bytes = 0x10E = 270
+
+## 11. JSON mapping
 
 This section defines a deterministic mapping between TRON values and JSON
 for interop and fixtures. It matches the reference implementation.
@@ -675,7 +788,7 @@ Notes:
 - The `b64:` prefix is reserved for binary encoding in JSON. If a string
   begins with `b64:` but is not valid base64, it remains a `txt` string.
 
-## 13. Optional addendum: implementation features
+## 12. Optional addendum: implementation features
 
 The following features are not required for core TRON format compatibility.
 They are documented here because some implementations (for example, the Go
