@@ -298,8 +298,7 @@ continues until keys diverge or max depth (7) is reached. Keys with identical
 Offset 0x00:
   0C 00 00 00    node_len=12, branch, map
   02 00 00 00    entry_count=2
-  03 00          bitmap=0x0003 (slots 0,1 occupied)
-  00 00          reserved
+  03 00 00 00          bitmap=0x0003 (slots 0,1 occupied)
   20 00 00 00    child[0] offset
   40 00 00 00    child[1] offset
 ```
@@ -443,8 +442,7 @@ Offset    Contents
           │                      Map Branch Node (Root)                       │
           │  14 00 00 00  :  node_len=20, flags=02 (branch, map)              │
           │  02 00 00 00  :  entry_count=2                                    │
-          │  22 00        :  bitmap=0x0022 (slots 1,5)                        │
-          │  00 00        :  reserved                                         │
+          │  22 00 00 00  :  bitmap=0x0022 (slots 1,5)                        │
           │  30 00 00 00  :  child[0] → 0x30 (slot 1 offset: "name" leaf)     │
           │  1C 00 00 00  :  child[1] → 0x1C (slot 5 offset: "scores" leaf)   │
 0x58      ├───────────────────────────────────────────────────────────────────┤
