@@ -9,6 +9,7 @@
 | 4        | 2026-01-08 | @oliverlambson            | Annotate byte-level TRON example  |
 | 5        | 2026-01-08 | @oliverlambson            | Reserve full u32 for HAMT bitmap  |
 | 6        | 2026-01-08 | @oliverlambson            | Revise value tag header format    |
+| 7        | 2026-01-09 | @oliverlambson            | Remove unnecessary reserved bytes |
 
 This document defines the binary format for TRie Object Notation. It is intended to be compatible with JSON primitives while using HAMT (for maps) and vector tries (for arrays) to support fast in-place modifications without rewriting the entire document. The format targets transport and embedding as a single blob in databases or KV stores, not a database or storage engine itself.
 
@@ -253,10 +254,9 @@ Array node layout (arr):
 ```
 Offset  Size  Field
 8       1     Shift (u8)
-9       1     Reserved (u8) = 0
-10      2     Bitmap (u16)
-12      4     Length (u32)
-16      ?     Entries in slot order
+9       2     Bitmap (u16)
+11      4     Length (u32)
+15      ?     Entries in slot order
 ```
 
 - `entry_count` must equal popcount(bitmap).
@@ -567,75 +567,72 @@ TRON bytes (hex, offsets at left):
 0018: 1D 00 00 00                       kind=1=leaf; key_type=0=arr; len=0b11100=28
 001C: 02 00 00 00                       entry_count=2
 0020: 00                                shift=0
-0021: 00                                reserved
-0022: 03 00                             bitmap=0b11
-0024: 02 00 00 00                       length=2
-0028: 1C 61                             "a"::txt
-002A: 02 00 00 00 00 00 00 00 00 00     0::i64
+0021: 03 00                             bitmap=0b11
+0023: 02 00 00 00                       length=2
+0027: 1C 61                             "a"::txt
+0029: 02 00 00 00 00 00 00 00 00 00     0::i64
 // node: R.e[0].entry[1]
-0034: 13 00 00 00                       kind=1=leaf; key_type=1=map; len=0b10000=16
-0038: 01 00 00 00                       entry_count=1
-003C: 4C 70 61 74 68                    key="path"::txt
-0041: 06 18                             value=arr @18
-0043: 00                                zero padding
+0033: 13 00 00 00                       kind=1=leaf; key_type=1=map; len=0b10000=16
+0037: 01 00 00 00                       entry_count=1
+003B: 4C 70 61 74 68                    key="path"::txt
+0040: 06 18                             value=arr @0018
+0042: 00                                zero padding
 // node: R.e[0].entry[2]
-0044: 17 00 00 00                       key=1=leaf; key_type=1=map; len=0b10100=20
-0048: 01 00 00 00                       entry_count=1
-004C: 2C 6F 70                          key="op"::txt
-004F: 02 00 00 00 00 00 00 00 00        value=0::i64
+0043: 17 00 00 00                       key=1=leaf; key_type=1=map; len=0b10100=20
+0049: 01 00 00 00                       entry_count=1
+004B: 2C 6F 70                          key="op"::txt
+004E: 02 00 00 00 00 00 00 00 00        value=0::i64
 // node: R.entry[0]
-0058: 1A 00 00 00                       kind=0=branch; key_type=1=map; len=0b11000=24
-005C: 03 00 00 00                       entry_count=3
-0060: 41 08 00 00                       bitmap=0b100001000001
-0064: 00 00 00 00                       entry[0] offset = @0000
-0068: 34 00 00 00                       entry[1] offset = @0034
-006C: 44 00 00 00                       entry[2] offset = @0044
+0057: 1A 00 00 00                       kind=0=branch; key_type=1=map; len=0b11000=24
+005B: 03 00 00 00                       entry_count=3
+005F: 41 08 00 00                       bitmap=0b100001000001
+0063: 00 00 00 00                       entry[0] offset = @0000
+0067: 33 00 00 00                       entry[1] offset = @0033
+006B: 43 00 00 00                       entry[2] offset = @0043
 // node: R.e[1].entry[0]
-0070: 17 00 00 00                       kind=1=leaf; key_type=1=map; len=0b10100=20
-0074: 01 00 00 00                       entry_count=1
-0078: 5C 76 61 6C 75 65                 key="value"::txt
-007E: 2C 68 69                          value="hi"::txt
-0082: 00 00 00                          zero padding
+006F: 17 00 00 00                       kind=1=leaf; key_type=1=map; len=0b10100=20
+0073: 01 00 00 00                       entry_count=1
+0077: 5C 76 61 6C 75 65                 key="value"::txt
+007D: 2C 68 69                          value="hi"::txt
+0081: 00 00 00                          zero padding
 // node: R.e[1].e[1].value["path"]
-0084: 15 00 00 00                       kind=1=leaf; key_type=0=arr; len=0b10100=20
-0088: 01 00 00 00                       entry_count=1
-008C: 00                                shift=8
-008D: 00                                reserved
-008E: 01 00                             bitmap=0b1
-0090: 01 00 00 00                       length=1
-0094: 1C 62                             "b"::txt
-0096: 00 00                             zero padding
+0083: 15 00 00 00                       kind=1=leaf; key_type=0=arr; len=0b10100=20
+0087: 01 00 00 00                       entry_count=1
+008B: 00                                shift=8
+008C: 01 00                             bitmap=0b1
+008E: 01 00 00 00                       length=1
+0092: 1C 62                             "b"::txt
+0094: 00 00                             zero padding
 // node: R.e[1].entry[1]
-0098: 13 00 00 00                       kind=1=leaf; key_type=1=map; len=0b10000=16
-009C: 01 00 00 00                       entry_count=1
-00A0: 4C 70 61 74 68                    key="path"::txt
-00A5: 06 84                             value=arr @0084
-00A7: 00                                zero padding
+0096: 13 00 00 00                       kind=1=leaf; key_type=1=map; len=0b10000=16
+009A: 01 00 00 00                       entry_count=1
+009E: 4C 70 61 74 68                    key="path"::txt
+00A3: 06 84                             value=arr @0083
+00A5: 00                                zero padding
 // node: R.e[1].entry[2]
-00A8: 17 00 00 00                       kind=1=leaf; key_type=1=map; len=0b10100=20
-00AC: 01 00 00 00                       entry_count=1
-00B0: 2C 6F 70                          key="op"::txt
-00B3: 02 02 00 00 00 00 00 00 00        value=2::i64
+00A6: 17 00 00 00                       kind=1=leaf; key_type=1=map; len=0b10100=20
+00AA: 01 00 00 00                       entry_count=1
+00AE: 2C 6F 70                          key="op"::txt
+00B1: 02 02 00 00 00 00 00 00 00        value=2::i64
 // node: R.entry[1]
-00BC: 1A 00 00 00                       kind=0=branch; key_type=1=map; len=0b11000=24
-00C0: 03 00 00 00                       entry_count=3
-00C4: 41 08 00 00                       bitmap=0b100001000001
-00C8: 70 00 00 00                       entry[0] offset = @0070
-00CC: 98 00 00 00                       entry[1] offset = @0098
-00D0: A8 00 00 00                       entry[2] offset = @00A8
+00BA: 1A 00 00 00                       kind=0=branch; key_type=1=map; len=0b11000=24
+00BE: 03 00 00 00                       entry_count=3
+00C2: 41 08 00 00                       bitmap=0b100001000001
+00C6: 6F 00 00 00                       entry[0] offset = @006F
+00CA: 96 00 00 00                       entry[1] offset = @0096
+00CE: A6 00 00 00                       entry[2] offset = @00A6
 // node: Root
-00D4: 15 00 00 00                       kind=1=leaf; key_type=0=arr; len=0b10100=20
-00D8: 02 00 00 00                       entry_count=2
-00DC: 00                                shift=0
-00DD: 00                                reserved
-00DE: 30 00                             bitmap=0b11
-00E0: 02 00 00 00                       length
-00E4: F1 58                             entry[0] offset = @0058
-00E6: F1 BC                             entry[1] offset = @00BC
+00D2: 15 00 00 00                       kind=1=leaf; key_type=0=arr; len=0b10100=20
+00D6: 02 00 00 00                       entry_count=2
+00DA: 00                                shift=0
+00DB: 30 00                             bitmap=0b11
+00DD: 02 00 00 00                       length
+00E1: F1 57                             entry[0] offset = @0057
+00E3: F1 BA                             entry[1] offset = @00BA
 // trailer
-00E8: D4 00 00 00                       root offset = @00D4
-00EC: 00 00 00 00                       prev root offset = 0 (i.e., this is canonical enc.)
-00F0: 56 4E 54 58                       magic "TRON" (i.e., this is a tree document)
+00E5: D2 00 00 00                       root offset = @00D2
+00E9: 00 00 00 00                       prev root offset = 0 (i.e., this is canonical enc.)
+00ED: 56 4E 54 58                       magic "TRON" (i.e., this is a tree document)
 ```
 
 ## JSON mapping

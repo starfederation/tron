@@ -1,5 +1,12 @@
 # HAMT and Vector Trie Primer
 
+> [!WARNING]
+>
+> This document is out-of-date in its current form.
+>
+> In the meantime, refer to [SPEC.md](./SPEC.md) for ground-truth spec, and
+> [MEMORY_LAYOUT.md](./MEMORY_LAYOUT.md) for detailed worked examples.
+
 This primer explains the two core data structures used by TRON: a HAMT for maps and a vector trie for arrays. It focuses on the shape of the trees and how TRON encodes them on the wire.
 
 ## HAMT primer (maps)
@@ -59,7 +66,7 @@ flowchart LR
 
 ### Balance and depth
 
-Vector tries are *height-balanced* in the sense that, for a given root shift, every indexed value lives at the same depth. The depth is fixed by the root shift: `depth = (rootShift / 4) + 1`. Sparse arrays only omit branches; they do not change the depth.
+Vector tries are _height-balanced_ in the sense that, for a given root shift, every indexed value lives at the same depth. The depth is fixed by the root shift: `depth = (rootShift / 4) + 1`. Sparse arrays only omit branches; they do not change the depth.
 
 The root shift is chosen to cover the highest index:
 

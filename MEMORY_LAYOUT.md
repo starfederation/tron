@@ -298,7 +298,7 @@ continues until keys diverge or max depth (7) is reached. Keys with identical
 Offset 0x00:
   0C 00 00 00    node_len=12, branch, map
   02 00 00 00    entry_count=2
-  03 00 00 00          bitmap=0x0003 (slots 0,1 occupied)
+  03 00 00 00    bitmap=0x0003 (slots 0,1 occupied)
   20 00 00 00    child[0] offset
   40 00 00 00    child[1] offset
 ```
@@ -337,10 +337,9 @@ the root, the shift is decreased by 4.
 | ------ | ------ | --------------------------- |
 | 0      | 8      | Node header                 |
 | 8      | 1      | Shift (u8)                  |
-| 9      | 1      | Reserved (0)                |
-| 10     | 2      | Bitmap (u16 LE)             |
-| 12     | 4      | Length (u32 LE)             |
-| 16     | 4 \* n | Child offsets (u32 LE each) |
+| 9      | 2      | Bitmap (u16 LE)             |
+| 11     | 4      | Length (u32 LE)             |
+| 15     | 4 \* n | Child offsets (u32 LE each) |
 
 ### Leaf Node Layout
 
@@ -348,10 +347,9 @@ the root, the shift is decreased by 4.
 | ------ | ---- | --------------------------- |
 | 0      | 8    | Node header                 |
 | 8      | 1    | Shift (must be 0)           |
-| 9      | 1    | Reserved (0)                |
-| 10     | 2    | Bitmap (u16 LE)             |
-| 12     | 4    | Length (u32 LE)             |
-| 16     | var  | Value records in slot order |
+| 9      | 2    | Bitmap (u16 LE)             |
+| 11     | 4    | Length (u32 LE)             |
+| 15     | var  | Value records in slot order |
 
 **Length field:** Only meaningful in the root node (stores array length, valid
 indices are `0..length-1`). Non-root nodes must store 0.
@@ -363,7 +361,6 @@ Offset 0x00:
   1D 00 00 00                   node_len=28, leaf, arr
   02 00 00 00                   entry_count=2
   00                            shift=0
-  00                            reserved
   03 00                         bitmap=0x0003 (indices 0,1)
   02 00 00 00                   length=2
   02 01 00 00 00 00 00 00 00    i64(1) at index 0
@@ -419,40 +416,39 @@ Offset    Contents
           │  1D 00 00 00                 :  node_len=28, flags=01 (leaf, arr) │
           │  02 00 00 00                 :  entry_count=2                     │
           │  00                          :  shift=0                           │
-          │  00                          :  reserved                          │
           │  03 00                       :  bitmap=0x0003 (slots 0,1)         │
           │  02 00 00 00                 :  length=2                          │
           │  02 0A 00 00 00 00 00 00 00  :  i64(10)                           │
           │  02 14 00 00 00 00 00 00 00  :  i64(20)                           │
-0x1C      ├───────────────────────────────────────────────────────────────────┤
+0x22      ├───────────────────────────────────────────────────────────────────┤
           │                   Map Leaf Node ("scores")                        │
           │  14 00 00 00           :  node_len=20, flags=03 (leaf, map)       │
           │  01 00 00 00           :  entry_count=1                           │
           │  6C 73 63 6F 72 65 73  :  txt "scores" (packed len=6)             │
           │  06 00                 :  arr ref (packed 1-byte offset=0x00)     │
           │  00 00                 :  padding to 4-byte boundary              │
-0x30      ├───────────────────────────────────────────────────────────────────┤
+0x34      ├───────────────────────────────────────────────────────────────────┤
           │                    Map Leaf Node ("name")                         │
           │  14 00 00 00        :  node_len=20, flags=03 (leaf, map)          │
           │  01 00 00 00        :  entry_count=1                              │
           │  4C 6E 61 6D 65     :  txt "name" (packed len=4)                  │
           │  5C 61 6C 69 63 65  :  txt "alice" (packed len=5)                 │
           │  00                 :  padding to 4-byte boundary                 │
-0x44      ├───────────────────────────────────────────────────────────────────┤
+0x49      ├───────────────────────────────────────────────────────────────────┤
           │                      Map Branch Node (Root)                       │
           │  14 00 00 00  :  node_len=20, flags=02 (branch, map)              │
           │  02 00 00 00  :  entry_count=2                                    │
           │  22 00 00 00  :  bitmap=0x0022 (slots 1,5)                        │
-          │  30 00 00 00  :  child[0] → 0x30 (slot 1 offset: "name" leaf)     │
-          │  1C 00 00 00  :  child[1] → 0x1C (slot 5 offset: "scores" leaf)   │
-0x58      ├───────────────────────────────────────────────────────────────────┤
+          │  34 00 00 00  :  child[0] → 0x34 (slot 1 offset: "name" leaf)     │
+          │  22 00 00 00  :  child[1] → 0x22 (slot 5 offset: "scores" leaf)   │
+0x5D      ├───────────────────────────────────────────────────────────────────┤
           │                           Trailer                                 │
-          │  44 00 00 00  :  root_offset=0x44                                 │
+          │  44 00 00 00  :  root_offset=0x49                                 │
           │  00 00 00 00  :  prev_root_offset=0 (no history)                  │
           │  54 52 4F 4E  :  magic "TRON"                                     │
-0x64      └───────────────────────────────────────────────────────────────────┘
+0x68      └───────────────────────────────────────────────────────────────────┘
 
-Total: 100 bytes (0x64)
+Total: 104 bytes (0x68)
 ```
 
 ### Traversal: Looking up `scores[1]`
@@ -473,12 +469,12 @@ Total: 100 bytes (0x64)
         │                    = popcount(0x2)                         │
         │                    = popcount(0b10)                        │
         │      ∴ child index = 1                                     │
-        │    Follow child[1] → offset 0x1C                           │
+        │    Follow child[1] → offset 0x22                           │
         └────────────────────────────────────────────────────────────┘
                                         │
                                         ▼
         ┌────────────────────────────────────────────────────────────┐
-        │ 2. At Map Leaf 0x1C: scan entries for key "scores"         │
+        │ 2. At Map Leaf 0x22: scan entries for key "scores"         │
         │    Found!                                                  │
         │    Value = arr ref @ offset 0x00                           │
         └────────────────────────────────────────────────────────────┘
@@ -518,35 +514,35 @@ Before (100 bytes):
 ┌────────────┬────────────┬───────────┬────────────┬─────────┐
 │ ArrLeaf    │ MapLeaf    │ MapLeaf   │ MapBranch  │ Trailer │
 │ [10,20]    │ "scores"   │ "name"    │ (root)     │         │
-│ @0x00      │ @0x1C      │ @0x30     │ @0x44      │         │
+│ @0x00      │ @0x22      │ @0x34     │ @0x49      │         │
 └────────────┴────────────┴───────────┴────────────┴─────────┘
-                                       root=0x44
+                                       root=0x49
 
 After (180 bytes):
 ┌────────────┬────────────┬───────────┬────────────┬─────────┬────────────┬────────────┬────────────┬──────────┐
 │ ArrLeaf    │ MapLeaf    │ MapLeaf   │ MapBranch  │ Trailer │ ArrLeaf'   │ MapLeaf'   │ MapBranch' │ Trailer' │
 │ [10,20]    │ "scores"   │ "name"    │ (old root) │ T-1     │ [99,20]    │ "scores"   │ (new root) │ T0       │
-│ @0x00      │ @0x1C      │ @0x30     │ @0x44      │         │ @0x64      │ @0x80      │ @0x94      │          │
+│ @0x00      │ @0x22      │ @0x34     │ @0x49      │         │ @0x68      │ @0x8a      │ @0x9c      │          │
 │ (hist)     │ (hist)     │           │ (hist)     │         │            │            │            │          │
 └────────────┴────────────┴───────────┴────────────┴─────────┴────────────┴────────────┴────────────┴──────────┘
  ▲                         ▲                                  │            │            │
  │                         │                                  │            │            │
  │                         └──────────────────────────────────│────────────│────────────┘
- │                           (reused: "name" leaf unchanged)  │            │  child[0]=0x30
- │                                                            │            │  child[1]=0x80
+ │                           (reused: "name" leaf unchanged)  │            │  child[0]=0x34
+ │                                                            │            │  child[1]=0x8a
  │                                                            │            │
  │                                                            │            └─ points to new "scores" leaf
  └────────────────────────────────────────────────────────────│───────────────────────────────────────────────
    (historical: reachable via prev chain)                     └─ arr ref now points to 0x64
 
-                                                               root=0x94
-                                                               prev=0x44
+                                                               root=0x9c
+                                                               prev=0x49
 ```
 
 Note:
 
-- The `"name"` leaf at 0x30 is **reused** (structural sharing)
-- Old nodes at 0x00, 0x1C, 0x44 are **historical** (reachable via `prev` for
+- The `"name"` leaf at 0x34 is **reused** (structural sharing)
+- Old nodes at 0x00, 0x22, 0x49 are **historical** (reachable via `prev` for
   time travel)
 - The old trailer T-1 is findable at `prev_root + node_len` (see History
   Traversal)
