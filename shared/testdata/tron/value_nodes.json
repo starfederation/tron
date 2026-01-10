@@ -1,0 +1,182 @@
+{
+  "nil": [{ "bytes": "00", "parsed": {} }],
+  "bit": [
+    { "bytes": "01", "parsed": { "value": false } },
+    { "bytes": "09", "parsed": { "value": true } }
+  ],
+  "i64": [
+    { "bytes": "020000000000000000", "parsed": { "value": 0 } },
+    { "bytes": "020100000000000000", "parsed": { "value": 1 } },
+    { "bytes": "020200000000000000", "parsed": { "value": 2 } },
+    { "bytes": "020A00000000000000", "parsed": { "value": 10 } },
+    { "bytes": "021400000000000000", "parsed": { "value": 20 } },
+    { "bytes": "022A00000000000000", "parsed": { "value": 42 } },
+    { "bytes": "02D204000000000000", "parsed": { "value": 1234 } },
+    { "bytes": "02FFFFFFFFFFFFFFFF", "parsed": { "value": -1 } },
+    {
+      "bytes": "02FFFFFFFFFFFFFF7F",
+      "parsed": { "value": 9223372036854775807 }
+    },
+    {
+      "bytes": "020000000000000080",
+      "parsed": { "value": -9223372036854775808 }
+    }
+  ],
+  "f64": [
+    { "bytes": "030000000000F83F", "parsed": { "value": 1.5 } },
+    { "bytes": "030000000000000000", "parsed": { "value": 0.0 } },
+    { "bytes": "03000000000000F03F", "parsed": { "value": 1.0 } },
+    { "bytes": "03182D4454FB210940", "parsed": { "value": 3.141592653589793 } }
+  ],
+  "txt": [
+    { "bytes": "0C", "parsed": { "value": "" } },
+    { "bytes": "1C61", "parsed": { "value": "a" } },
+    { "bytes": "1C62", "parsed": { "value": "b" } },
+    { "bytes": "1C76", "parsed": { "value": "v" } },
+    { "bytes": "2C6869", "parsed": { "value": "hi" } },
+    { "bytes": "2C6F70", "parsed": { "value": "op" } },
+    { "bytes": "2C6162", "parsed": { "value": "ab" } },
+    { "bytes": "4C6E616D65", "parsed": { "value": "name" } },
+    { "bytes": "4C70617468", "parsed": { "value": "path" } },
+    { "bytes": "5C616C696365", "parsed": { "value": "alice" } },
+    { "bytes": "5C76616C7565", "parsed": { "value": "value" } },
+    { "bytes": "6C73636F726573", "parsed": { "value": "scores" } },
+    {
+      "bytes": "FC6162636465666768696A6B6C6D6E6F",
+      "parsed": { "value": "abcdefghijklmno" }
+    },
+    {
+      "bytes": "14106162636465666768696A6B6C6D6E6F70",
+      "parsed": { "value": "abcdefghijklmnop" }
+    }
+  ],
+  "bin": [
+    { "bytes": "0D", "parsed": { "value": "" } },
+    { "bytes": "1DFF", "parsed": { "value": "FF" } },
+    { "bytes": "3DAABBCC", "parsed": { "value": "AABBCC" } }
+  ],
+  "arr": [
+    {
+      "bytes": "0E09000000000000",
+      "parsed": {
+        "is_root": true,
+        "is_leaf": true,
+        "node_len": 9,
+        "shift": 0,
+        "bitmap": 0,
+        "length": 0,
+        "entries": []
+      }
+    },
+    {
+      "bytes": "0E0D000100010000001000000",
+      "parsed": {
+        "is_root": true,
+        "is_leaf": true,
+        "node_len": 13,
+        "shift": 0,
+        "bitmap": 1,
+        "length": 1,
+        "entries": [16]
+      }
+    },
+    {
+      "bytes": "0E110003000200000001C00000025000000",
+      "parsed": {
+        "is_root": true,
+        "is_leaf": true,
+        "node_len": 17,
+        "shift": 0,
+        "bitmap": 3,
+        "length": 2,
+        "entries": [28, 37]
+      }
+    },
+    {
+      "bytes": "061104030011000000190000005E000000",
+      "parsed": {
+        "is_root": true,
+        "is_leaf": false,
+        "node_len": 17,
+        "shift": 4,
+        "bitmap": 3,
+        "length": 17,
+        "entries": [25, 94]
+      }
+    },
+    {
+      "bytes": "4E090001001000000",
+      "parsed": {
+        "is_root": false,
+        "is_leaf": true,
+        "node_len": 9,
+        "shift": 0,
+        "bitmap": 1,
+        "entries": [16]
+      }
+    }
+  ],
+  "map": [
+    {
+      "bytes": "0F02",
+      "parsed": { "is_leaf": true, "node_len": 2, "entries": [] }
+    },
+    {
+      "bytes": "0F0A0000000006000000",
+      "parsed": {
+        "is_leaf": true,
+        "node_len": 10,
+        "entries": [{ "key": 0, "value": 6 }]
+      }
+    },
+    {
+      "bytes": "0F0A0000000005000000",
+      "parsed": {
+        "is_leaf": true,
+        "node_len": 10,
+        "entries": [{ "key": 0, "value": 5 }]
+      }
+    },
+    {
+      "bytes": "070A400000002A000000",
+      "parsed": {
+        "is_leaf": false,
+        "node_len": 10,
+        "bitmap": 64,
+        "entries": [42]
+      }
+    },
+    {
+      "bytes": "070E220000000B0000003F000000",
+      "parsed": {
+        "is_leaf": false,
+        "node_len": 14,
+        "bitmap": 34,
+        "entries": [11, 63]
+      }
+    },
+    {
+      "bytes": "0712410800000F0000003A00000050000000",
+      "parsed": {
+        "is_leaf": false,
+        "node_len": 18,
+        "bitmap": 2113,
+        "entries": [15, 58, 80]
+      }
+    }
+  ],
+  "footer": [
+    {
+      "bytes": "C50000000000000054524F4E",
+      "parsed": { "root_address": 197, "prev_root_address": 0, "magic": "TRON" }
+    },
+    {
+      "bytes": "860000004900000054524F4E",
+      "parsed": {
+        "root_address": 134,
+        "prev_root_address": 73,
+        "magic": "TRON"
+      }
+    }
+  ]
+}
