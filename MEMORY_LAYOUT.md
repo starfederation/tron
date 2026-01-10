@@ -120,16 +120,16 @@ Bit layout: 7 6 5 4 3 2 1 0
 
 ### Value Types
 
-| Type | Bits       | Description                             | Payload                                                                                                                                  |
-| ---- | ---------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| nil  | `00000000` | JSON null                               | No bytes (tag header tells us all we need)                                                                                               |
-| bit  | `0000B001` | Boolean (true/false)                    | No bytes (true/false value packed in bit 3 of tag header)                                                                                |
-| i64  | `00000010` | Signed 64-bit int                       | 8 bytes, little-endian                                                                                                                   |
-| f64  | `00000011` | IEEE-754 64-bit float (a.k.a. "double") | 8 bytes, little-endian                                                                                                                   |
-| txt  | `LLLLP100` | UTF-8 string                            | N (1-8) bytes for L (if P=0 because L>15) + L UTF-8 bytes                                                                                |
-| bin  | `LLLLP101` | Raw bytes                               | N (1-8) bytes for L (if P=0 because L>15) + L raw bytes                                                                                  |
-| arr  | `00MMB110` | Array branch/leaf node                  | M+1 bytes for L, 1 byte for shift, 2 bytes for bitmap, 4\*entry_count bytes for entries                                                  |
-| map  | `00MMB111` | Map branch/leaf node                    | M+1 bytes for L, 4 bytes for bitmap (if branch), 4\*entry_count bytes for entries if branch / 2\*4\*n_kv_pairs bytes for entries if leaf |
+| Type | Bits       | Description                             | Payload                                                                                                                                     |
+| ---- | ---------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| nil  | `00000000` | JSON null                               | No bytes (tag header tells us all we need)                                                                                                  |
+| bit  | `0000B001` | Boolean (true/false)                    | No bytes (true/false value packed in bit 3 of tag header)                                                                                   |
+| i64  | `00000010` | Signed 64-bit int                       | 8 bytes, little-endian                                                                                                                      |
+| f64  | `00000011` | IEEE-754 64-bit float (a.k.a. "double") | 8 bytes, little-endian                                                                                                                      |
+| txt  | `LLLLP100` | UTF-8 string                            | N (1-8) bytes for L (if P=0 because L>15) + L UTF-8 bytes                                                                                   |
+| bin  | `LLLLP101` | Raw bytes                               | N (1-8) bytes for L (if P=0 because L>15) + L raw bytes                                                                                     |
+| arr  | `0RMMB110` | Array branch/leaf node                  | M+1 bytes for L, 1 byte for shift, 2 bytes for bitmap, if root: 4 bytes for arr length, 4\*entry_count bytes for entries                    |
+| map  | `00MMB111` | Map branch/leaf node                    | M+1 bytes for L, 4 bytes for bitmap (if branch), if branch: 4\*entry_count bytes for entries; elif leaf: 2\*4\*n_kv_pairs bytes for entries |
 
 Where `entry_count = popcount(bitmap)`
 
@@ -967,6 +967,325 @@ Total: 78 bytes (0x4E)
 
 ---
 
+## Multi-Level Array Example (Vector Trie)
+
+This section shows a TRON array with 17 elements, which requires multiple levels
+in the Vector Trie structure. Any array with more than 16 elements needs a
+root shift > 0, creating a tree with depth > 0.
+
+**JSON Representation:**
+
+```json
+[
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  42
+]
+```
+
+This array has:
+
+- 16 nil values at indices 0-15
+- One i64(42) value at index 16
+
+### Why Multiple Levels?
+
+The root shift is chosen so `max_index >> shift <= 0xF`. For 17 elements:
+
+- max_index = 16
+- 16 >> 0 = 16 > 15, so shift=0 won't work (too many slots needed)
+- 16 >> 4 = 1 ≤ 15, so shift=4 works
+
+With shift=4 at the root:
+
+- Indices 0-15: slot = (index >> 4) & 0xF = 0 (all map to slot 0)
+- Index 16: slot = (16 >> 4) & 0xF = 1 (maps to slot 1)
+
+So the root branch has two children at slots 0 and 1, each handling a subset
+of indices.
+
+### TRON Structure
+
+```mermaid
+flowchart TB
+    root["Array Branch (Root)<br/>@0x67<br/>shift=4<br/>bitmap: 0x0003<br/>(slots 0,1 occupied)<br/>length=17<br/>child[0] → @0x19<br/>child[1] → @0x5E"]
+
+    leaf0["Array Leaf<br/>@0x19<br/>shift=0<br/>bitmap: 0xFFFF<br/>(slots 0-15)<br/>[0] → @0x00<br/>[1] → @0x01<br/>...<br/>[15] → @0x0F"]
+
+    leaf1["Array Leaf<br/>@0x5E<br/>shift=0<br/>bitmap: 0x0001<br/>(slot 0)<br/>[0] → @0x10"]
+
+    nil0["nil<br/>@0x00"]
+    nil1["nil<br/>@0x01"]
+    nilDots["..."]
+    nil15["nil<br/>@0x0F"]
+    i64_42["i64 42<br/>@0x10"]
+
+    root --> leaf0
+    root --> leaf1
+
+    leaf0 --> nil0
+    leaf0 --> nil1
+    leaf0 --> nilDots
+    leaf0 --> nil15
+
+    leaf1 --> i64_42
+```
+
+<details>
+<summary>ASCII diagram</summary>
+
+```
+                    ┌──────────────────────────────────┐
+                    │ Array Branch (Root)              │
+                    │ @0x67                            │
+                    │ shift=4                          │
+                    │ bitmap: 0x0003 (slots 0,1)       │
+                    │ length=17                        │
+                    │ child[0] → @0x19                 │
+                    │ child[1] → @0x5E                 │
+                    └───────────────┬──────────────────┘
+                  ┌─────────────────┴──────────────────┐
+                  ▼                                    ▼
+     ┌─────────────────────────┐          ┌─────────────────────────┐
+     │ Array Leaf              │          │ Array Leaf              │
+     │ @0x19                   │          │ @0x5E                   │
+     │ shift=0                 │          │ shift=0                 │
+     │ bitmap: 0xFFFF          │          │ bitmap: 0x0001          │
+     │ (slots 0-15)            │          │ (slot 0)                │
+     │ [0] → @0x00 (nil)       │          │ [0] → @0x10 (i64 42)    │
+     │ [1] → @0x01 (nil)       │          └────────────┬────────────┘
+     │ ...                     │                       │
+     │ [15] → @0x0F (nil)      │                       ▼
+     └───────────┬─────────────┘               ┌──────────────┐
+                 │                             │ i64 42       │
+    ┌────────────┼────────────┐                │ @0x10        │
+    ▼            ▼            ▼                └──────────────┘
+┌───────┐   ┌───────┐    ┌───────┐
+│ nil   │   │ nil   │    │ nil   │
+│ @0x00 │   │ @0x01 │ .. │ @0x0F │
+└───────┘   └───────┘    └───────┘
+```
+
+</details>
+
+### Byte-Level Layout
+
+Canonical TRON serialization uses depth-first post-order traversal, visiting
+slots in ascending order. Children are written before parents.
+
+Serialization order:
+
+1. Values for indices 0-15 (nil values)
+2. Value for index 16 (i64 42)
+3. Array leaf for slot 0 (indices 0-15)
+4. Array leaf for slot 1 (index 16)
+5. Array branch (root)
+6. Root footer
+
+```
+Address  Bytes                                      Description
+───────────────────────────────────────────────────────────────────────────────
+// === Values ===
+
+0x00     00                                         nil (index 0)
+0x01     00                                         nil (index 1)
+0x02     00                                         nil (index 2)
+0x03     00                                         nil (index 3)
+0x04     00                                         nil (index 4)
+0x05     00                                         nil (index 5)
+0x06     00                                         nil (index 6)
+0x07     00                                         nil (index 7)
+0x08     00                                         nil (index 8)
+0x09     00                                         nil (index 9)
+0x0A     00                                         nil (index 10)
+0x0B     00                                         nil (index 11)
+0x0C     00                                         nil (index 12)
+0x0D     00                                         nil (index 13)
+0x0E     00                                         nil (index 14)
+0x0F     00                                         nil (index 15)
+
+0x10     02 2A 00 00 00 00 00 00 00                 i64(42) (index 16)
+                                                     tag=0x02
+
+// === Array Leaf for slot 0 (indices 0-15) ===
+
+0x19     0E                                         Array leaf (child)
+                                                      tag 0x0E = 0b0_0_00_1_110
+                                                             R=0 (child), MM=0, B=1 (leaf)
+         45                                           node_len=69 (total node size)
+         00                                           shift=0
+         FF FF                                        bitmap=0xFFFF (all 16 slots)
+         00 00 00 00                                  entry[0] addr → @0x00 (nil)
+         01 00 00 00                                  entry[1] addr → @0x01 (nil)
+         02 00 00 00                                  entry[2] addr → @0x02 (nil)
+         03 00 00 00                                  entry[3] addr → @0x03 (nil)
+         04 00 00 00                                  entry[4] addr → @0x04 (nil)
+         05 00 00 00                                  entry[5] addr → @0x05 (nil)
+         06 00 00 00                                  entry[6] addr → @0x06 (nil)
+         07 00 00 00                                  entry[7] addr → @0x07 (nil)
+         08 00 00 00                                  entry[8] addr → @0x08 (nil)
+         09 00 00 00                                  entry[9] addr → @0x09 (nil)
+         0A 00 00 00                                  entry[10] addr → @0x0A (nil)
+         0B 00 00 00                                  entry[11] addr → @0x0B (nil)
+         0C 00 00 00                                  entry[12] addr → @0x0C (nil)
+         0D 00 00 00                                  entry[13] addr → @0x0D (nil)
+         0E 00 00 00                                  entry[14] addr → @0x0E (nil)
+         0F 00 00 00                                  entry[15] addr → @0x0F (nil)
+
+// === Array Leaf for slot 1 (index 16) ===
+
+0x5E     0E                                         Array leaf (child)
+                                                      tag 0x0E = 0b0_0_00_1_110
+                                                             R=0 (child), MM=0, B=1 (leaf)
+         09                                           node_len=9 (total node size)
+         00                                           shift=0
+         01 00                                        bitmap=0x0001 (slot 0 only)
+         10 00 00 00                                  entry[0] addr → @0x10 (i64 42)
+
+// === Root Array Branch ===
+
+0x67     46                                         Array branch (root)
+                                                      tag 0x46 = 0b0_1_00_0_110
+                                                             R=1 (root), MM=0, B=0 (branch)
+         11                                           node_len=17 (total node size)
+         04                                           shift=4
+         03 00                                        bitmap=0x0003 (slots 0,1)
+         11 00 00 00                                  length=17
+         19 00 00 00                                  child[0] addr → @0x19 (leaf for 0-15)
+         5E 00 00 00                                  child[1] addr → @0x5E (leaf for 16)
+
+// === Root footer ===
+
+0x78     67 00 00 00                                root addr → @0x67
+         00 00 00 00                                prev root = 0 (canonical)
+         54 52 4F 4E                                magic "TRON"
+───────────────────────────────────────────────────────────────────────────────
+Total: 132 bytes (0x84)
+```
+
+Tag byte encoding reference:
+
+- `0x0E` = `0b0_0_00_1_110` → arr child leaf (R=0, MM=0, B=1, TTT=110)
+- `0x46` = `0b0_1_00_0_110` → arr root branch (R=1, MM=0, B=0, TTT=110)
+
+**Note:** Child array nodes (R=0) do not have the 4-byte length field. Only the
+root array node (R=1) includes it.
+
+### Lookup Walkthrough: Finding Element at Index 12
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 1. Read trailer (last 12 bytes)                                              │
+│    root = @0x67                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 2. At root (@0x67): Array Branch, shift=4                                    │
+│    slot = (index >> shift) & 0xF                                             │
+│         = (12 >> 4) & 0xF                                                    │
+│         = 0 & 0xF                                                            │
+│    ∴ slot = 0                                                                │
+│    bitmap = 0x0003 → slot 0 is set ✓                                         │
+│    child_index = popcount(0x0003 & ((1 << 0) - 1))                           │
+│                = popcount(0x0003 & 0x0)                                      │
+│                = popcount(0x0) = 0                                           │
+│    Follow child[0] → @0x19                                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 3. At @0x19: Array Leaf, shift=0                                             │
+│    slot = (index >> shift) & 0xF                                             │
+│         = (12 >> 0) & 0xF                                                    │
+│         = 12 & 0xF                                                           │
+│    ∴ slot = 12                                                               │
+│    bitmap = 0xFFFF → slot 12 is set ✓                                        │
+│    value_index = popcount(0xFFFF & ((1 << 12) - 1))                          │
+│                = popcount(0xFFFF & 0x0FFF)                                   │
+│                = popcount(0x0FFF) = 12                                       │
+│    Read entry[12] addr → @0x0C                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 4. Read value at @0x0C                                                       │
+│    tag = 0x00 → nil                                                          │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+                              ┌────────────────┐
+                              │  Result: null  │
+                              └────────────────┘
+```
+
+### Lookup Walkthrough: Finding Element at Index 16
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 1. Read trailer → root = @0x67                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 2. At root (@0x67): Array Branch, shift=4                                    │
+│    slot = (16 >> 4) & 0xF = 1                                                │
+│    bitmap = 0x0003 → slot 1 is set ✓                                         │
+│    child_index = popcount(0x0003 & ((1 << 1) - 1))                           │
+│                = popcount(0x0003 & 0x1)                                      │
+│                = popcount(0x1) = 1                                           │
+│    Follow child[1] → @0x5E                                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 3. At @0x5E: Array Leaf, shift=0                                             │
+│    slot = (16 >> 0) & 0xF = 0                                                │
+│    bitmap = 0x0001 → slot 0 is set ✓                                         │
+│    value_index = popcount(0x0001 & 0x0) = 0                                  │
+│    Read entry[0] addr → @0x10                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 4. Read value at @0x10                                                       │
+│    tag = 0x02 → i64                                                          │
+│    payload = 42                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+                              ┌────────────────┐
+                              │  Result: 42    │
+                              └────────────────┘
+```
+
+### Multi-level array summary
+
+1. Shift determines depth: Arrays with >16 elements need shift>0 at root.
+   The shift decreases by 4 at each level until reaching shift=0 at leaves.
+2. Slot calculation: At each level, `slot = (index >> shift) & 0xF` determines
+   which child to follow.
+3. Root vs child nodes: Only the root node (R=1) contains the array length
+   field. Child nodes (R=0) omit this field entirely.
+4. Structural sharing: Like maps, updates only rewrite the path from root
+   to the modified leaf—sibling subtrees are reused.
+
+---
+
 ## Time Complexity
 
 | Operation     | Map (HAMT) | Array (Vector Trie) |
@@ -1007,7 +1326,7 @@ Scalar types
   bin:  LLLLP101           (same as txt)
 
 Container types
-  arr:  00MMB110           (B=leaf/branch, M+1 bytes for node_len)
+  arr:  0RMMB110           (R=root/child, B=leaf/branch, M+1 bytes for node_len)
   map:  00MMB111           (B=leaf/branch, M+1 bytes for node_len)
 
 Container node layout

@@ -13,6 +13,7 @@
 | 8        | 2026-01-10 | @oliverlambson            | Be explicit that all addresses are absolute         |
 | 9        | 2026-01-11 | @oliverlambson            | Use a single document type for scalar & tree values |
 | 10       | 2026-01-12 | @oliverlambson            | Remove entry_count from arr/map nodes               |
+| 11       | 2026-01-13 | @oliverlambson            | Only include arr length on root arr nodes           |
 
 This document defines the binary format for TRie Object Notation. It is intended to be compatible with JSON primitives while using HAMT (for maps) and vector tries (for arrays) to support fast in-place modifications without rewriting the entire document. The format targets transport and embedding as a single blob in databases or KV stores, not a database or storage engine itself.
 
@@ -116,7 +117,7 @@ Example: 3 bytes `0xAA 0xBB 0xCC` -> tag `0x3D`, payload `0xAA 0xBB 0xCC`
 
 ### arr (0b110)
 
-Tag bits: `00MMB110` where `B` is branch/leaf flag (0=branch, 1=leaf). Payload is: length encoded in `MM + 1` bytes; shift (u8); bitmap (u16); if branch: u32 LE addresses of leaf nodes (`entry_count` \* 4 bytes); if leaf: u32 LE addresses of value nodes (`entry_count` \* 4 bytes). Where `entry_count = popcount(bitmap)`.
+Tag bits: `0RMMB110` where `R` is root arr node flag (0=root, 1=child), `B` is branch/leaf flag (0=branch, 1=leaf). Payload is: node length encoded in `MM + 1` bytes; shift (u8); bitmap (u16); if root: length of arr (u32); if branch: u32 LE addresses of leaf nodes (`entry_count` \* 4 bytes); if leaf: u32 LE addresses of value nodes (`entry_count` \* 4 bytes). Where `entry_count = popcount(bitmap)`.
 
 Example: leaf arr with one value node at address `0x10` -> tag `0x0E`, payload `0x0D 0x01 0x10 0x00 0x00 0x10 0x00 0x00 0x00`
 
@@ -231,8 +232,11 @@ Offset  Size  Field
 1       M+1   Node length
 M+2     1     Shift (u8)
 M+3     2     Bitmap (u16)
+// if root arr node:
 M+5     4     Length (u32)
 M+9     4*n   Addresses of child nodes (n * u32), in slot order.
+// else:
+M+5     4*n   Addresses of child nodes (n * u32), in slot order.
 ```
 
 Array leaf node layout:
@@ -243,8 +247,11 @@ Offset  Size  Field
 1       M+1   Node length
 M+2     1     Shift (u8)
 M+3     2     Bitmap (u16)
-M+5     4     Length (u32)
+// if root arr node:
+M+5     4     Length (u32) if is root arr node
 M+9     4*n   Addresses of value nodes (n * u32), in slot order.
+// else:
+M+5     4*n   Addresses of value nodes (n * u32), in slot order.
 ```
 
 Indexing:
@@ -260,7 +267,6 @@ Conditions:
 - Array length is stored in the root node (shift may be 0). Valid indices are `0..length-1`.
 - Append is defined as setting index = length; writers update length in the new root.
 - Length is defined as max index + 1. When deleting the last element, length must shrink to the next highest existing index + 1.
-- Length is meaningful only in the root node; non-root nodes must store 0.
 - Array lookup/set/append are O(d), where d is depth (<= 8 for u32 indices with 4-bit chunks).
 - Arrays may be sparse during updates; missing indices are treated as `nil` for logical operations. Canonical encoding must densify arrays by rewriting into a new document (filling missing indices with `nil`).
 
