@@ -100,9 +100,9 @@ byte0 ... byteN-4  byteN-11  byteN-10  byteN-9  byteN-8  byteN-7  byteN-6  byteN
 node data section             root node address                prev. root node address                   magic trailer
 ```
 
-Minimum size: 18 bytes (empty map leaf: 6-byte node + 12-byte trailer).
+Minimum size: 14 bytes (empty map leaf: 2-byte node + 12-byte trailer).
 Array nodes require additional fields (shift, bitmap, length), so minimum array
-document is 25 bytes.
+document is 21 bytes.
 
 ---
 
@@ -120,16 +120,18 @@ Bit layout: 7 6 5 4 3 2 1 0
 
 ### Value Types
 
-| Type | Bits       | Description                             | Payload                                                                                                                                                            |
-| ---- | ---------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| nil  | `00000000` | JSON null                               | No bytes (tag header tells us all we need)                                                                                                                         |
-| bit  | `0000B001` | Boolean (true/false)                    | No bytes (true/false value packed in bit 3 of tag header)                                                                                                          |
-| i64  | `00000010` | Signed 64-bit int                       | 8 bytes, little-endian                                                                                                                                             |
-| f64  | `00000011` | IEEE-754 64-bit float (a.k.a. "double") | 8 bytes, little-endian                                                                                                                                             |
-| txt  | `LLLLP100` | UTF-8 string                            | N (1-8) bytes for L (if P=0 because L>15) + L UTF-8 bytes                                                                                                          |
-| bin  | `LLLLP101` | Raw bytes                               | N (1-8) bytes for L (if P=0 because L>15) + L raw bytes                                                                                                            |
-| arr  | `00MMB110` | Array branch/leaf node                  | M+1 bytes for L, 4 bytes for entry count, 1 byte for shift, 2 bytes for bitmap, 4\*entry_count bytes for entries                                                   |
-| map  | `00MMB111` | Map branch/leaf node                    | M+1 bytes for L, 4 bytes for entry count, 4 bytes for bitmap (if branch), 4\*entry_count bytes for entries if branch / 2\*4\*entry_count bytes for entries if leaf |
+| Type | Bits       | Description                             | Payload                                                                                                                                  |
+| ---- | ---------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| nil  | `00000000` | JSON null                               | No bytes (tag header tells us all we need)                                                                                               |
+| bit  | `0000B001` | Boolean (true/false)                    | No bytes (true/false value packed in bit 3 of tag header)                                                                                |
+| i64  | `00000010` | Signed 64-bit int                       | 8 bytes, little-endian                                                                                                                   |
+| f64  | `00000011` | IEEE-754 64-bit float (a.k.a. "double") | 8 bytes, little-endian                                                                                                                   |
+| txt  | `LLLLP100` | UTF-8 string                            | N (1-8) bytes for L (if P=0 because L>15) + L UTF-8 bytes                                                                                |
+| bin  | `LLLLP101` | Raw bytes                               | N (1-8) bytes for L (if P=0 because L>15) + L raw bytes                                                                                  |
+| arr  | `00MMB110` | Array branch/leaf node                  | M+1 bytes for L, 1 byte for shift, 2 bytes for bitmap, 4\*entry_count bytes for entries                                                  |
+| map  | `00MMB111` | Map branch/leaf node                    | M+1 bytes for L, 4 bytes for bitmap (if branch), 4\*entry_count bytes for entries if branch / 2\*4\*n_kv_pairs bytes for entries if leaf |
+
+Where `entry_count = popcount(bitmap)`
 
 ### Type Encoding: txt, bin
 
@@ -161,12 +163,12 @@ false:          0x01
 true:           0x09
 i64(42):        0x02 2A 00 00 00 00 00 00 00
 f64(1.5):       0x03 00 00 00 00 00 00 F8 3F
-txt "ab":       0x2C 61 62                                 (packed len=2)
-txt (long):     0x14 20 <32 bytes...>                      (unpacked, 1-byte len=32)
-bin 0xDDEEFF:   0x3D DD EE FF                              (packed len=3)
-bin (long):     0x25 00 01 <256 bytes...>                  (unpacked, 2-byte len=256)
-arr:            0x0C 0D 00 00 00 00 00 00 00 00 00 00 00   (empty leaf, 13 bytes)
-map:            0x06 06 00 00 00 00                        (empty leaf, 6 bytes)
+txt "ab":       0x2C 61 62                     (packed len=2)
+txt (long):     0x14 20 <32 bytes...>          (unpacked, 1-byte len=32)
+bin 0xDDEEFF:   0x3D DD EE FF                  (packed len=3)
+bin (long):     0x25 00 01 <256 bytes...>      (unpacked, 2-byte len=256)
+arr:            0x0C 0D 00 00 00 00 00 00 00   (empty leaf, 9 bytes)
+map:            0x06 06                        (empty leaf, 2 bytes)
 ```
 
 ---
@@ -195,9 +197,8 @@ you only go down to the level of the first non-collision.
 | ------ | ------ | -------------------------------------------------------------------------------- |
 | 0      | 1      | Node tag header                                                                  |
 | 1      | M+1    | Node length                                                                      |
-| M+2    | 4      | Entry count (u32) [n] - must equal popcount(bitmap)                              |
-| M+6    | 4      | Bitmap (u32) - note since there are max 16 slots, the upper 2 bytes are always 0 |
-| M+10   | 4 \* n | Addresses of child leaves/branches (u32 LE each), ordered by slot index          |
+| M+2    | 4      | Bitmap (u32) - note since there are max 16 slots, the upper 2 bytes are always 0 |
+| M+6    | 4 \* n | Addresses of child leaves/branches (u32 LE each), ordered by slot index          |
 
 ```
 Branch node:
@@ -211,27 +212,19 @@ Branch node:
     └─────────┬──────────┘
         1-4 bytes (uint)
 
-  Entry count
-    byteM+5  byteM+4   byteM+3  byteM+2
-    XXXXXXXX XXXXXXXX  XXXXXXXX XXXXXXXX
-    └────────────────┬─────────────────┘
-        number of children in slots
- (equal to number of 1s in bitmap, i.e. 0-32)
-
   Bitmap
-    byteM+9  byteM+8   byteM+7  byteM+6
+    byteM+5  byteM+4   byteM+3  byteM+2
     00000000 00000000  XXXXXXXX XXXXXXXX
     └───────┬───────┘  └───────┬───────┘
         always 0           16 slots
+      (entry_count = popcount of bitmap → number of 1s in bitmap)
 
   Child addresses
-    byteM+13 byteM+12 byteM+11 byteM+10  byteM+17 byteM+16 byteM+15 byteM+14  ...
+    byteM+9  byteM+8   byteM+7  byteM+6  byteM+13 byteM+12 byteM+11 byteM+10  ...
     XXXXXXXX XXXXXXXX XXXXXXXX XXXXXXXX  XXXXXXXX XXXXXXXX XXXXXXXX XXXXXXXX  ...
     └────────────────┬────────────────┘  └────────────────┬────────────────┘
                child 0 address                       child 1 address          ...
 ```
-
-Where `entry_count = popcount(bitmap)`
 
 Child index: `popcount(bitmap & ((1 << slot) - 1))`
 
@@ -241,8 +234,7 @@ Child index: `popcount(bitmap & ((1 << slot) - 1))`
 | ------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0      | 1      | Node tag header                                                                                                                                                                   |
 | 1      | M+1    | Node length                                                                                                                                                                       |
-| M+2    | 4      | Entry count (u32) [n] - number of key/value pairs                                                                                                                                 |
-| M+6    | 8 \* n | Addresses of key/value pairs (u32+u32, each LE), ordered by key UTF-8 bytes (keys are unique within node). Key records are always a txt node. Value records can be any node type. |
+| M+2    | 8 \* n | Addresses of key/value pairs (u32+u32, each LE), ordered by key UTF-8 bytes (keys are unique within node). Key records are always a txt node. Value records can be any node type. |
 
 ```
 Leaf node:
@@ -256,18 +248,13 @@ Leaf node:
     └─────────┬──────────┘
         1-4 bytes (uint)
 
-  Entry count
-    byteM+5  byteM+4   byteM+3  byteM+2
-    XXXXXXXX XXXXXXXX  XXXXXXXX XXXXXXXX
-    └────────────────┬─────────────────┘
-            number of entries (will always be 1 unless max-depth w/ full hash collision)
-
   Entries
-    byteM+9  byteM+8   byteM+7  byteM+6  byteM+13 byteM+12 byteM+11 byteM+10  byteM+17
+    byteM+5  byteM+4   byteM+3  byteM+2  byteM+9  byteM+8   byteM+7  byteM+6  byteM+13
     XXXXXXXX XXXXXXXX XXXXXXXX XXXXXXXX  XXXXXXXX XXXXXXXX XXXXXXXX XXXXXXXX  XXXXXXXX       ...
     └────────────────┬────────────────┘  └────────────────┬────────────────┘  └──┬──────────────
             child 0 key address                 child 0 value address       child 1 key addr ...
          (of a txt value record)               (of an any value record)
+    → number of entries (will always be 1 unless max-depth w/ full hash collision)
 ```
 
 - Entries sorted by UTF-8 key bytes
@@ -286,8 +273,7 @@ continues until keys diverge or max depth (7) is reached. Keys with identical
 ```
 Address 0x006A
   07             type=map; B=0=branch; M=0 (0x07 = 0b00_00_0_111)
-  16             node_len=22 (total node size)
-  03 00 00 00    entry_count=3
+  12             node_len=18 (total node size)
   41 08 00 00    bitmap=0x0841 (slots 0,6,11)
   0F 00 00 00    entry[0] address = @000F
   42 00 00 00    entry[1] address = @0042
@@ -299,8 +285,7 @@ Address 0x006A
 ```
 Address 0x005C
   0F             type=map; B=1=leaf; M=0 (0b00_00_1_111)
-  0E             node_len=14 (total node size)
-  01 00 00 00    entry_count=1
+  0A             node_len=10 (total node size)
   50 00 00 00    entry[0].key address   = @0050
   53 00 00 00    entry[0].value address = @0053
 ```
@@ -329,11 +314,10 @@ the root, the shift is decreased by 4.
 | ------ | ------ | ------------------------------------------------------ |
 | 0      | 1      | Node tag header                                        |
 | 1      | M+1    | Node length                                            |
-| M+2    | 4      | Entry count (u32 LE) [n] - must equal popcount(bitmap) |
-| M+6    | 1      | Shift (u8)                                             |
-| M+7    | 2      | Bitmap (u16 LE)                                        |
-| M+9    | 4      | Length (u32 LE)                                        |
-| M+13   | 4 \* n | Addresses of child nodes (u32 LE each), in slot order. |
+| M+2    | 1      | Shift (u8)                                             |
+| M+3    | 2      | Bitmap (u16 LE)                                        |
+| M+5    | 4      | Length (u32 LE)                                        |
+| M+9    | 4 \* n | Addresses of child nodes (u32 LE each), in slot order. |
 
 ### Leaf Node Layout
 
@@ -341,11 +325,10 @@ the root, the shift is decreased by 4.
 | ------ | ------ | ------------------------------------------------------- |
 | 0      | 1      | Node tag header                                         |
 | 1      | M+1    | Node length                                             |
-| M+2    | 4      | Entry count (u32 LE) [n] - must equal popcount(bitmap)  |
-| M+6    | 1      | Shift (u8)                                              |
-| M+7    | 2      | Bitmap (u16 LE)                                         |
-| M+9    | 4      | Length (u32 LE)                                         |
-| M+13   | 4 \* n | Addresses of value nodes (u32 LE, each), in slot order. |
+| M+2    | 1      | Shift (u8)                                              |
+| M+3    | 2      | Bitmap (u16 LE)                                         |
+| M+5    | 4      | Length (u32 LE)                                         |
+| M+9    | 4 \* n | Addresses of value nodes (u32 LE, each), in slot order. |
 
 **Length field:** Only meaningful in the root node (stores array length, valid
 indices are `0..length-1`). Non-root nodes must store 0.
@@ -355,8 +338,7 @@ indices are `0..length-1`). Non-root nodes must store 0.
 ```
 Address 0x00ED:
   0E             type=arr; B=1=leaf; M=0 (0b00_00_1_110)
-  15             node_len=21 (total node size)
-  02 00 00 00    entry_count=2
+  11             node_len=17 (total node size)
   00             shift=0
   03 00          bitmap=0b11 (slots 0,1)
   02 00 00 00    length=2
@@ -467,47 +449,43 @@ Address  Bytes                                   Description
                                                    tag=0x5C (0b0101_1_100)
 
 0x0B     0F                                      Map leaf for slot 1
-         0E                                        node_len=14 (total node size)
-         01 00 00 00                               entry_count=1
+         0A                                        node_len=10 (total node size)
          00 00 00 00                               key addr → @0x00 ("name")
          05 00 00 00                               val addr → @0x05 ("alice")
 
-0x19     6C 73 63 6F 72 65 73                    txt "scores" (packed, L=6)
+0x15     6C 73 63 6F 72 65 73                    txt "scores" (packed, L=6)
                                                    tag=0x6C (0b0110_1_100)
 
-0x20     02 0A 00 00 00 00 00 00 00              i64(10)
+0x1C     02 0A 00 00 00 00 00 00 00              i64(10)
                                                    tag=0x02
 
-0x29     02 14 00 00 00 00 00 00 00              i64(20)
+0x25     02 14 00 00 00 00 00 00 00              i64(20)
                                                    tag=0x02
 
-0x32     0E                                      Array leaf
-         15                                        node_len=21 (total node size)
-         02 00 00 00                               entry_count=2
+0x2E     0E                                      Array leaf
+         11                                        node_len=17 (total node size)
          00                                        shift=0
          03 00                                     bitmap=0x0003 (slots 0,1)
          02 00 00 00                               length=2
-         20 00 00 00                               entry[0] addr → @0x20 (i64 10)
-         29 00 00 00                               entry[1] addr → @0x29 (i64 20)
+         1C 00 00 00                               entry[0] addr → @0x1C (i64 10)
+         25 00 00 00                               entry[1] addr → @0x25 (i64 20)
 
-0x47     0F                                      Map leaf for slot 5
+0x3F     0F                                      Map leaf for slot 5
+         0A                                        node_len=10 (total node size)
+         15 00 00 00                               key addr → @0x15 ("scores")
+         2E 00 00 00                               val addr → @0x2E (array)
+
+0x49     07                                      Map branch (root)
          0E                                        node_len=14 (total node size)
-         01 00 00 00                               entry_count=1
-         19 00 00 00                               key addr → @0x19 ("scores")
-         32 00 00 00                               val addr → @0x32 (array)
-
-0x55     07                                      Map branch (root)
-         12                                        node_len=18 (total node size)
-         02 00 00 00                               entry_count=2
          22 00 00 00                               bitmap=0x0022 (slots 1,5)
          0B 00 00 00                               child[0] → @0x0B (slot 1 leaf)
-         47 00 00 00                               child[1] → @0x47 (slot 5 leaf)
+         3F 00 00 00                               child[1] → @0x3F (slot 5 leaf)
 
-0x67     55 00 00 00                             Trailer: root_addr=@0x55
+0x57     55 00 00 00                             Trailer: root_addr=@0x49
          00 00 00 00                               prev_root=0 (canonical)
          54 52 4F 4E                               magic "TRON"
 ─────────────────────────────────────────────────────────────────────────────────
-Total: 115 bytes (0x73)
+Total: 99 bytes (0x62)
 ```
 
 Tag byte encoding reference:
@@ -537,19 +515,19 @@ Tag byte encoding reference:
         │                    = popcount(0x2)                         │
         │                    = popcount(0b10)                        │
         │      ∴ child index = 1                                     │
-        │    Follow child[1] → address 0x47                          │
+        │    Follow child[1] → address 0x3F                          │
         └────────────────────────────────────────────────────────────┘
                                         │
                                         ▼
         ┌────────────────────────────────────────────────────────────┐
         │ 2. At Map Leaf 0x47: scan entries for key "scores"         │
-        │    Compare key @ 0x19 with "scores" → match!               │
-        │    Value addr = 0x32 (array leaf)                          │
+        │    Compare key @ 0x15 with "scores" → match!               │
+        │    Value addr = 0x2E (array leaf)                          │
         └────────────────────────────────────────────────────────────┘
                                         │
                                         ▼
         ┌────────────────────────────────────────────────────────────┐
-        │ 3. At Array Leaf 0x32: looking for index 1                 │
+        │ 3. At Array Leaf 0x2E: looking for index 1                 │
         │      → slot = (index >> shift) & 0xF                       │
         │             = (1 >> 0) & 0xF                               │
         │      ∴ slot = 1                                            │
@@ -558,12 +536,12 @@ Tag byte encoding reference:
         │                    = popcount(0b11 & 0b1)                  │
         │                    = popcount(0b1)                         │
         │      ∴ value index = 1                                     │
-        │    Read entry[1] addr → 0x29                               │
+        │    Read entry[1] addr → 0x25                               │
         └────────────────────────────────────────────────────────────┘
                                         │
                                         ▼
         ┌────────────────────────────────────────────────────────────┐
-        │ 4. Read value node at 0x29                                 │
+        │ 4. Read value node at 0x25                                 │
         │    tag = 0x02 → i64                                        │
         │    payload = 0x14 = 20                                     │
         └────────────────────────────────────────────────────────────┘
@@ -587,10 +565,10 @@ Tag byte encoding reference:
 ```
 Before (115 bytes):
 ┌─────────┬─────────┬─────────┬──────────┬───────┬───────┬─────────┬──────────┬───────────┬─────────────┐
-│ 0x00    │ 0x05    │ 0x0B    │ 0x19     │ 0x20  │ 0x29  │ 0x32    │ 0x47     │ 0x55      │ 0x67        │
+│ 0x00    │ 0x05    │ 0x0B    │ 0x15     │ 0x1C  │ 0x25  │ 0x2E    │ 0x3F     │ 0x49      │ 0x57        │
 │ txt     │ txt     │ MapLeaf │ txt      │ i64   │ i64   │ ArrLeaf │ MapLeaf  │ MapBranch │ Root footer │
-│ "name"  │ "alice" │ k0@0x00 │ "scores" │ 10    │ 20    │ 0@0x20  │ k0@0x19  │ @0x0B     │ @0x55       │
-│         │         │ v0@0x05 │          │       │       │ 1@0x29  │ v0@0x32  │ @0x47     │             │
+│ "name"  │ "alice" │ k0@0x00 │ "scores" │ 10    │ 20    │ 0@0x1C  │ k0@0x15  │ @0x0B     │ @0x49       │
+│         │         │ v0@0x05 │          │       │       │ 1@0x25  │ v0@0x2E  │ @0x3F     │             │
 └─────────┴─────────┴─────────┴──────────┴───────┴───────┴─────────┴──────────┴───────────┴─────────────┘
   ▲         ▲         ▲ ││      ▲          ▲       ▲       ▲ ││      ▲ ││       ▲ ││        │
   │         └─────────│─┘│      │          │       └───────│─┘│      │ ││       └───────────┘
@@ -600,10 +578,10 @@ Before (115 bytes):
                       └────────────────────────────────────────────────────────────┘
 After (189 bytes):
 ┌──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬────────┬─────────┬────────┬──────────────┐
-│ 0x00 │ 0x05 │ 0x0B │ 0x19 │ 0x20 │ 0x29 │ 0x32 │ 0x47 │ 0x55 │ 0x67 │ 0x73 │ 0x7C   │ 0x91    │ 0x9F   │ 0xB1         │
+│ 0x00 │ 0x05 │ 0x0B │ 0x15 │ 0x1C │ 0x25 │ 0x2E │ 0x3F │ 0x49 │ 0x57 │ 0x62 │ 0x6B   │ 0x7C    │ 0x86   │ 0x94         │
 │ txt  │ txt  │ ML   │ txt  │ i64  │ i64  │ AL   │ ML   │ MB   │ RF   │ i64  │ AL'    │ ML'     │ MB'    │ RF'          │
-│      │      │      │      │      │      │      │      │      │      │ 99   │ 0@0x73 │ k0@0x19 │ 0@0x0B │ @0x9F        │
-│      │      │      │      │ X    │      │ X    │ X    │ X    │ X    │      │ 1@0x29 │ v0@0x7C │ 1@0x91 │ @0x55 (prev) │
+│      │      │      │      │      │      │      │      │      │      │ 99   │ 0@0x62 │ k0@0x15 │ 0@0x0B │ @0x86        │
+│      │      │      │      │ X    │      │ X    │ X    │ X    │ X    │      │ 1@0x25 │ v0@0x6B │ 1@0x7C │ @0x49 (prev) │
 └──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴────────┴─────────┴────────┴──────────────┘
   ▲      ▲      ▲ ││   ▲             ▲                                  ▲      ▲ ││     ▲││       ▲ ││     │
   │      └──────│─┘│   │             └─────────────────────────────────────────│─┘│     │││       └────────┘
@@ -617,9 +595,9 @@ Note:
 
 - The `"name"` leaf at @0x0B is **reused** (structural sharing)
 - Scalars "name", "alice", "scores", and i64(20) are **reused**
-- Old arr/map nodes at @0x32, @0x47, @0x55 are **historical** (reachable via
+- Old arr/map nodes at @0x2E, @0x3F, @0x49 are **historical** (reachable via
   `prev` chain for time travel)
-- The old trailer T-1 is findable at `prev_root + 1 + (M+1) + node_len` (see
+- The old root footer RF is findable at `prev_root + 1 + (M+1) + node_len` (see
   History Traversal)
 
 ---
@@ -796,36 +774,36 @@ flowchart TB
 ```
                     ┌─────────────────────────────┐
                     │ Map Branch (Root) - Depth 0 │
-                    │ @0x44                       │
+                    │ @0x38                       │
                     │ bitmap: 0x0040              │
                     │     (0b00000000 01000000)   │
                     │ slot 6 occupied ─┘          │
-                    │ child[0] → @0x32            │
+                    │ child[0] → @0x2A            │
                     └──────────────┬──────────────┘
                                    │
                                    ▼
                     ┌─────────────────────────────┐
                     │ Map Branch - Depth 1        │
-                    │ @0x32                       │
+                    │ @0x2A                       │
                     │ bitmap: 0x0030              │
                     │       (0b00000000 00110000) │
                     │ slots 4,5 occupied ─┴┘      │
                     │ child[0] → @0x0B (slot 4)   │
-                    │ child[1] → @0x24 (slot 5)   │
+                    │ child[1] → @0x20 (slot 5)   │
                     └──────────────┬──────────────┘
                   ┌────────────────┴────────────────┐
                   ▼                                 ▼
        ┌────────────────────┐            ┌────────────────────┐
        │ Map Leaf           │            │ Map Leaf           │
        │ @0x0B              │            │ @0x24              │
-       │ key → @0x00 ("v")  │            │ key → @0x19 ("a")  │
-       │ val → @0x02 (2)    │            │ val → @0x1B (1)    │
+       │ key → @0x00 ("v")  │            │ key → @0x15 ("a")  │
+       │ val → @0x02 (2)    │            │ val → @0x17 (1)    │
        └─────────┬──────────┘            └─────────┬──────────┘
           ┌──────┴──────┐                   ┌──────┴──────┐
           ▼             ▼                   ▼             ▼
      ┌─────────┐   ┌─────────┐         ┌─────────┐   ┌─────────┐
      │ txt "v" │   │ i64 2   │         │ txt "a" │   │ i64 1   │
-     │ @0x00   │   │ @0x02   │         │ @0x19   │   │ @0x1B   │
+     │ @0x00   │   │ @0x02   │         │ @0x15   │   │ @0x17   │
      └─────────┘   └─────────┘         └─────────┘   └─────────┘
 ```
 
@@ -879,51 +857,47 @@ Address  Bytes                                      Description
                                                       tag 0x02, payload LE
 
 0x0B     0F                                         Map leaf
-         03                                           node_len=14
-         01 00 00 00                                   entry_count=1
+         0A                                           node_len=10
          00 00 00 00                                   key addr → @0x00 ("v")
          02 00 00 00                                   val addr → @0x02 (2)
 
 // === Slot 5 subtree (key "a") ===
 
-0x19     1C 61                                      txt "a" (packed, L=1)
+0x15     1C 61                                      txt "a" (packed, L=1)
 
-0x1B     02 01 00 00 00 00 00 00 00                 i64 1
+0x17     02 01 00 00 00 00 00 00 00                 i64 1
 
-0x24     0F                                         Map leaf
-         0E                                           node_len=14
-         01 00 00 00                                   entry_count=1
-         19 00 00 00                                   key addr → @0x19 ("a")
-         1B 00 00 00                                   val addr → @0x1B (1)
+0x20     0F                                         Map leaf
+         0A                                           node_len=10
+         15 00 00 00                                   key addr → @0x15 ("a")
+         17 00 00 00                                   val addr → @0x17 (1)
 
 // === Depth-1 branch (resolves the collision) ===
 
-0x32     07                                         Map branch
+0x2A     07                                         Map branch
                                                       tag 0x07 = 0b00_00_0_111
                                                                MM=0 → L=1, B=0=branch
-         12                                           node_len=18
-         02 00 00 00                                   entry_count=2
+         0E                                           node_len=14
          30 00 00 00                                   bitmap=0x0030
                                                         (slots 4,5 set)
          0B 00 00 00                                   child[0] → @0x0B (slot 4, "v")
-         24 00 00 00                                   child[1] → @0x24 (slot 5, "a")
+         20 00 00 00                                   child[1] → @0x20 (slot 5, "a")
 
 // === Root branch (depth 0) ===
 
-0x44     07                                         Map branch (root)
-         0E                                           node_len=14
-         01 00 00 00                                   entry_count=1
+0x38     07                                         Map branch (root)
+         0A                                           node_len=10
          40 00 00 00                                   bitmap=0x0040
                                                         (slot 6 set)
-         32 00 00 00                                   child[0] → @0x32 (depth-1 branch)
+         2A 00 00 00                                   child[0] → @0x2A (depth-1 branch)
 
 // === Root footer ===
 
-0x52     44 00 00 00                                root addr → @0x44
+0x42     38 00 00 00                                root addr → @0x38
          00 00 00 00                                prev root = 0 (canonical)
          54 52 4F 4E                                magic "TRON"
 ───────────────────────────────────────────────────────────────────────────────
-Total: 94 bytes (0x5E)
+Total: 78 bytes (0x4E)
 ```
 
 ### Lookup Walkthrough: Finding `"a"`
@@ -931,43 +905,43 @@ Total: 94 bytes (0x5E)
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ 1. Read trailer (last 12 bytes)                                              │
-│    root = @0x44                                                              │
+│    root = @0x38                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ 2. At root (@0x44): Map Branch, depth=0                                      │
+│ 2. At root (@0x38): Map Branch, depth=0                                      │
 │    hash("a") = 0x550d7456                                                    │
 │    slot = hash & 0xF = 6                                                     │
 │    bitmap = 0x0040 → slot 6 is set ✓                                         │
 │    child_index = popcount(0x0040 & ((1<<6)-1))                               │
 │                = popcount(0x0040 & 0x3F)                                     │
 │                = popcount(0x0000) = 0                                        │
-│    Follow child[0] → @0x32                                                   │
+│    Follow child[0] → @0x2A                                                   │
 └──────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ 3. At @0x32: Map Branch, depth=1                                             │
+│ 3. At @0x2A: Map Branch, depth=1                                             │
 │    slot = (hash >> 4) & 0xF = 5                                              │
 │    bitmap = 0x0030 → slot 5 is set ✓                                         │
 │    child_index = popcount(0x0030 & ((1<<5)-1))                               │
 │                = popcount(0x0030 & 0x1F)                                     │
 │                = popcount(0x0010) = 1                                        │
-│    Follow child[1] → @0x24                                                   │
+│    Follow child[1] → @0x20                                                   │
 └──────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ 4. At @0x24: Map Leaf                                                        │
+│ 4. At @0x20: Map Leaf                                                        │
 │    Scan entries for key "a"                                                  │
-│    entry[0]: key @ 0x19 = "a" → MATCH!                                       │
-│    value @ 0x1B                                                              │
+│    entry[0]: key @ 0x15 = "a" → MATCH!                                       │
+│    value @ 0x17                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ 5. Read value at @0x1B                                                       │
+│ 5. Read value at @0x17                                                       │
 │    tag = 0x02 → i64                                                          │
 │    payload = 1                                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -1037,7 +1011,7 @@ Container types
   map:  00MMB111           (B=leaf/branch, M+1 bytes for node_len)
 
 Container node layout
-  [Tag 1B] [Length M+1B] [entry_count 4B] [type-specific...]
+  [Tag 1B] [Length M+1B] [type-specific...]
 
   arr: shift(1B) + bitmap(2B) + length(4B) + entries(4B * n)
   map branch: bitmap(4B) + children(4B * n)
