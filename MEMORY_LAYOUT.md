@@ -100,9 +100,9 @@ byte0 ... byteN-4  byteN-11  byteN-10  byteN-9  byteN-8  byteN-7  byteN-6  byteN
 node data section             root node address                prev. root node address                   magic trailer
 ```
 
-Minimum size: ?? bytes (empty map leaf: ??-byte node + 12-byte trailer).
+Minimum size: 18 bytes (empty map leaf: 6-byte node + 12-byte trailer).
 Array nodes require additional fields (shift, bitmap, length), so minimum array
-document is ?? bytes.
+document is 25 bytes.
 
 ---
 
@@ -120,16 +120,16 @@ Bit layout: 7 6 5 4 3 2 1 0
 
 ### Value Types
 
-| Type | Bits       | Description                             | Payload                                                                                                                                                          |
-| ---- | ---------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| nil  | `00000000` | JSON null                               | No bytes (tag header tells us all we need)                                                                                                                       |
-| bit  | `0000B001` | Boolean (true/false)                    | No bytes (true/false value packed in bit 3 of tag header)                                                                                                        |
-| i64  | `00000010` | Signed 64-bit int                       | 8 bytes, little-endian                                                                                                                                           |
-| f64  | `00000011` | IEEE-754 64-bit float (a.k.a. "double") | 8 bytes, little-endian                                                                                                                                           |
-| txt  | `LLLLP100` | UTF-8 string                            | N (1-8) bytes for L (if P=0 because L>15) + L UTF-8 bytes                                                                                                        |
-| bin  | `LLLLP101` | Raw bytes                               | N (1-8) bytes for L (if P=0 because L>15) + L raw bytes                                                                                                          |
-| arr  | `00MMB110` | Array branch/leaf node                  | M bytes for L, 4 bytes for entry count, 1 byte for shift, 2 bytes for bitmap, 4\*entry_count bytes for entries                                                   |
-| map  | `00MMB111` | Map branch/leaf node                    | M bytes for L, 4 bytes for entry count, 4 bytes for bitmap (if branch), 4\*entry_count bytes for entries if branch / 2\*4\*entry_count bytes for entries if leaf |
+| Type | Bits       | Description                             | Payload                                                                                                                                                            |
+| ---- | ---------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| nil  | `00000000` | JSON null                               | No bytes (tag header tells us all we need)                                                                                                                         |
+| bit  | `0000B001` | Boolean (true/false)                    | No bytes (true/false value packed in bit 3 of tag header)                                                                                                          |
+| i64  | `00000010` | Signed 64-bit int                       | 8 bytes, little-endian                                                                                                                                             |
+| f64  | `00000011` | IEEE-754 64-bit float (a.k.a. "double") | 8 bytes, little-endian                                                                                                                                             |
+| txt  | `LLLLP100` | UTF-8 string                            | N (1-8) bytes for L (if P=0 because L>15) + L UTF-8 bytes                                                                                                          |
+| bin  | `LLLLP101` | Raw bytes                               | N (1-8) bytes for L (if P=0 because L>15) + L raw bytes                                                                                                            |
+| arr  | `00MMB110` | Array branch/leaf node                  | M+1 bytes for L, 4 bytes for entry count, 1 byte for shift, 2 bytes for bitmap, 4\*entry_count bytes for entries                                                   |
+| map  | `00MMB111` | Map branch/leaf node                    | M+1 bytes for L, 4 bytes for entry count, 4 bytes for bitmap (if branch), 4\*entry_count bytes for entries if branch / 2\*4\*entry_count bytes for entries if leaf |
 
 ### Type Encoding: txt, bin
 
@@ -161,12 +161,12 @@ false:          0x01
 true:           0x09
 i64(42):        0x02 2A 00 00 00 00 00 00 00
 f64(1.5):       0x03 00 00 00 00 00 00 F8 3F
-txt "ab":       0x2C 61 62                     (packed len=2)
-txt (long):     0x14 20 <32 bytes...>          (unpacked, 1-byte len=32)
-bin 0xDDEEFF:   0x3D DD EE FF                  (packed len=3)
-bin (long):     0x25 00 01 <256 bytes...>      (unpacked, 2-byte len=256)
-arr:            0x?? ??                        arr w/ ??
-map:            0x?? ?? ?? ?? ??               map w/ ??
+txt "ab":       0x2C 61 62                                 (packed len=2)
+txt (long):     0x14 20 <32 bytes...>                      (unpacked, 1-byte len=32)
+bin 0xDDEEFF:   0x3D DD EE FF                              (packed len=3)
+bin (long):     0x25 00 01 <256 bytes...>                  (unpacked, 2-byte len=256)
+arr:            0x0C 0D 00 00 00 00 00 00 00 00 00 00 00   (empty leaf, 13 bytes)
+map:            0x06 06 00 00 00 00                        (empty leaf, 6 bytes)
 ```
 
 ---
@@ -512,9 +512,9 @@ Total: 115 bytes (0x73)
 
 Tag byte encoding reference:
 
-- `0x07` = `0b00_00_0_111` → map branch (MM=0, B=0, TTT=111)
-- `0x0E` = `0b00_00_1_110` → arr leaf (MM=0, B=1, TTT=110)
-- `0x0F` = `0b00_00_1_111` → map leaf (MM=0, B=1, TTT=111)
+- `0x07` = `0b00_00_0_111` → map branch (MM=0 → L=1, B=0, TTT=111)
+- `0x0E` = `0b00_00_1_110` → arr leaf (MM=0 → L=1, B=1, TTT=110)
+- `0x0F` = `0b00_00_1_111` → map leaf (MM=0 → L=1, B=1, TTT=111)
 - `0x4C` = `0b0100_1_100` → txt packed L=4
 - `0x5C` = `0b0101_1_100` → txt packed L=5
 - `0x6C` = `0b0110_1_100` → txt packed L=6
@@ -900,7 +900,7 @@ Address  Bytes                                      Description
 
 0x32     07                                         Map branch
                                                       tag 0x07 = 0b00_00_0_111
-                                                               MM=0, B=0=branch
+                                                               MM=0 → L=1, B=0=branch
          12                                           node_len=18
          02 00 00 00                                   entry_count=2
          30 00 00 00                                   bitmap=0x0030
