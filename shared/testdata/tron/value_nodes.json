@@ -23,7 +23,7 @@
     }
   ],
   "f64": [
-    { "bytes": "030000000000F83F", "parsed": { "value": 1.5 } },
+    { "bytes": "03000000000000F83F", "parsed": { "value": 1.5 } },
     { "bytes": "030000000000000000", "parsed": { "value": 0.0 } },
     { "bytes": "03000000000000F03F", "parsed": { "value": 1.0 } },
     { "bytes": "03182D4454FB210940", "parsed": { "value": 3.141592653589793 } }
@@ -57,10 +57,10 @@
   ],
   "arr": [
     {
-      "bytes": "0E09000000000000",
+      "bytes": "0E0900000000000000",
       "parsed": {
         "is_root": true,
-        "is_leaf": true,
+        "is_branch": false,
         "node_len": 9,
         "shift": 0,
         "bitmap": 0,
@@ -69,10 +69,10 @@
       }
     },
     {
-      "bytes": "0E0D000100010000001000000",
+      "bytes": "0E0D0001000100000010000000",
       "parsed": {
         "is_root": true,
-        "is_leaf": true,
+        "is_branch": false,
         "node_len": 13,
         "shift": 0,
         "bitmap": 1,
@@ -81,10 +81,10 @@
       }
     },
     {
-      "bytes": "0E110003000200000001C00000025000000",
+      "bytes": "0E11000300020000001C00000025000000",
       "parsed": {
         "is_root": true,
-        "is_leaf": true,
+        "is_branch": false,
         "node_len": 17,
         "shift": 0,
         "bitmap": 3,
@@ -96,7 +96,7 @@
       "bytes": "061104030011000000190000005E000000",
       "parsed": {
         "is_root": true,
-        "is_leaf": false,
+        "is_branch": true,
         "node_len": 17,
         "shift": 4,
         "bitmap": 3,
@@ -105,10 +105,10 @@
       }
     },
     {
-      "bytes": "4E090001001000000",
+      "bytes": "4E0900010010000000",
       "parsed": {
         "is_root": false,
-        "is_leaf": true,
+        "is_branch": false,
         "node_len": 9,
         "shift": 0,
         "bitmap": 1,
@@ -119,12 +119,12 @@
   "map": [
     {
       "bytes": "0F02",
-      "parsed": { "is_leaf": true, "node_len": 2, "entries": [] }
+      "parsed": { "is_branch": false, "node_len": 2, "entries": [] }
     },
     {
       "bytes": "0F0A0000000006000000",
       "parsed": {
-        "is_leaf": true,
+        "is_branch": false,
         "node_len": 10,
         "entries": [{ "key": 0, "value": 6 }]
       }
@@ -132,7 +132,7 @@
     {
       "bytes": "0F0A0000000005000000",
       "parsed": {
-        "is_leaf": true,
+        "is_branch": false,
         "node_len": 10,
         "entries": [{ "key": 0, "value": 5 }]
       }
@@ -140,7 +140,7 @@
     {
       "bytes": "070A400000002A000000",
       "parsed": {
-        "is_leaf": false,
+        "is_branch": true,
         "node_len": 10,
         "bitmap": 64,
         "entries": [42]
@@ -149,7 +149,7 @@
     {
       "bytes": "070E220000000B0000003F000000",
       "parsed": {
-        "is_leaf": false,
+        "is_branch": true,
         "node_len": 14,
         "bitmap": 34,
         "entries": [11, 63]
@@ -158,7 +158,7 @@
     {
       "bytes": "0712410800000F0000003A00000050000000",
       "parsed": {
-        "is_leaf": false,
+        "is_branch": true,
         "node_len": 18,
         "bitmap": 2113,
         "entries": [15, 58, 80]
