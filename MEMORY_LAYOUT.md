@@ -370,8 +370,8 @@ This section shows the complete memory layout of a tree document representing:
 
 ```json
 {
-  "name": "alice",
-  "scores": [10, 20]
+  "items": "alice",
+  "data": [10, 20]
 }
 ```
 
@@ -379,27 +379,27 @@ This section shows the complete memory layout of a tree document representing:
 
 ```mermaid
 flowchart TB
-      root["Map Branch (Root)<br/>0x4D<br/>bitmap: 0x0022<br/>(0b00000000 00100010)<br/>slots occupied: 1, 5<br/>child[0] → @0x0F<br/>child[1] → @0x43"]
+      root["Map Branch (Root)<br/>0x4C<br/>bitmap: 0x0022<br/>(0b00000000 00100010)<br/>slots occupied: 1, 5<br/>child[0] → @0x10<br/>child[1] → @0x42"]
 
-      leaf1["Map Leaf (slot 1)<br/>0x0F<br/>key0 → @0x04<br/>val0 → @0x09"]
-      leaf5["Map Leaf (slot 5)<br/>0x43<br/>key0 → @0x19<br/>val0 → @0x32"]
+      leaf1["Map Leaf (slot 1)<br/>0x10<br/>key0 → @0x04<br/>val0 → @0x0A"]
+      leaf5["Map Leaf (slot 5)<br/>0x42<br/>key0 → @0x1A<br/>val0 → @0x31"]
 
-      str_name["String<br/>0x04<br/>&quot;name&quot;"]
-      str_alice["String<br/>0x09<br/>&quot;alice&quot;"]
+      str_items["String<br/>0x04<br/>&quot;items&quot;"]
+      str_alice["String<br/>0x0A<br/>&quot;alice&quot;"]
 
-      str_scores["String<br/>0x19<br/>&quot;scores&quot;"]
-      arr["Array Leaf<br/>0x32<br/>[0] → int @0x20<br/>[1] → int @0x29"]
+      str_data["String<br/>0x1A<br/>&quot;data&quot;"]
+      arr["Array Leaf<br/>0x31<br/>[0] → int @0x1F<br/>[1] → int @0x28"]
 
-      int10["Int<br/>0x20<br/>10"]
-      int20["Int<br/>0x29<br/>20"]
+      int10["Int<br/>0x1F<br/>10"]
+      int20["Int<br/>0x28<br/>20"]
 
       root --> leaf1
       root --> leaf5
 
-      leaf1 --> str_name
+      leaf1 --> str_items
       leaf1 --> str_alice
 
-      leaf5 --> str_scores
+      leaf5 --> str_data
       leaf5 --> arr
 
       arr --> int10
@@ -412,29 +412,29 @@ flowchart TB
 ```
                           ┌──────────────────────────┐
                           │ Map Branch        (Root) │
-                          │ 0x4D                     │
+                          │ 0x4C                     │
                           │ bitmap: 0x0022           │
                           │    (0b00000000 00100010) │
                           │                  │   │   │
                           │ slots occupied:  5   1   │
-                          │ child[0] → @0x0F         │
-                          │ child[1] → @0x43         │
+                          │ child[0] → @0x10         │
+                          │ child[1] → @0x42         │
                           └────────────┬─────────────┘
                   ┌────────────────────┴─────────────────────┐
                   ▼                                          ▼
         ┌───────────────────┐                       ┌───────────────────┐
         │ Map Leaf (slot 1) │                       │ Map Leaf (slot 5) │
-        │ 0x0F              │                       │ 0x43              │
-        │ key0 → @0x04      │                       │ key0 → @0x19      │
-        │ val0 → @0x09      │                       │ val0 → @0x32      │
+        │ 0x10              │                       │ 0x42              │
+        │ key0 → @0x04      │                       │ key0 → @0x1A      │
+        │ val0 → @0x0A      │                       │ val0 → @0x31      │
         └─────────┬─────────┘                       └─────────┬─────────┘
         ┌─────────┴─────────┐                      ┌──────────┴─────────┐
         ▼                   ▼                      ▼                    ▼
     ┌────────┐          ┌────────┐             ┌──────────┐    ┌─────────────────┐
     │ String │          │ String │             │ String   │    │ Array Leaf      │
-    │ 0x04   │          │ 0x09   │             │ 0x19     │    │ 0x32            │
-    │ "name" │          │ "alice"│             │ "scores" │    │ [0] → int @0x20 │
-    └────────┘          └────────┘             └──────────┘    │ [1] → int @0x29 │
+    │ 0x04   │          │ 0x0A   │             │ 0x1A     │    │ 0x31            │
+    │ "items"│          │ "alice"│             │ "data"   │    │ [0] → int @0x1F │
+    └────────┘          └────────┘             └──────────┘    │ [1] → int @0x28 │
                                                                └────────┬────────┘
                                                                         │
                                                                ┌────────┴───────┐
@@ -442,7 +442,7 @@ flowchart TB
                                                                ▼                ▼
                                                             ┌──────┐         ┌──────┐
                                                             │ Int  │         │ Int  │
-                                                            │ 0x20 │         │ 0x29 │
+                                                            │ 0x1F │         │ 0x28 │
                                                             │ 10   │         │ 20   │
                                                             └──────┘         └──────┘
 ```
@@ -460,49 +460,49 @@ Address  Bytes                                   Description
 ─────────────────────────────────────────────────────────────────────────────────
 0x00     54 52 4F 4E                             Header: magic "TRON"
 
-0x04     4C 6E 61 6D 65                          txt "name" (packed, L=4)
-                                                   tag=0x4C (0b0100_1_100)
-
-0x09     5C 61 6C 69 63 65                       txt "alice" (packed, L=5)
+0x04     5C 69 74 65 6D 73                       txt "items" (packed, L=5)
                                                    tag=0x5C (0b0101_1_100)
 
-0x0F     0F                                      Map leaf for slot 1
+0x0A     5C 61 6C 69 63 65                       txt "alice" (packed, L=5)
+                                                   tag=0x5C (0b0101_1_100)
+
+0x10     0F                                      Map leaf for slot 1
          0A                                        node_len=10 (total node size)
-         04 00 00 00                               key addr → @0x04 ("name")
-         09 00 00 00                               val addr → @0x09 ("alice")
+         04 00 00 00                               key addr → @0x04 ("items")
+         0A 00 00 00                               val addr → @0x0A ("alice")
 
-0x19     6C 73 63 6F 72 65 73                    txt "scores" (packed, L=6)
-                                                   tag=0x6C (0b0110_1_100)
+0x1A     4C 64 61 74 61                          txt "data" (packed, L=4)
+                                                   tag=0x4C (0b0100_1_100)
 
-0x20     02 0A 00 00 00 00 00 00 00              i64(10)
+0x1F     02 0A 00 00 00 00 00 00 00              i64(10)
                                                    tag=0x02
 
-0x29     02 14 00 00 00 00 00 00 00              i64(20)
+0x28     02 14 00 00 00 00 00 00 00              i64(20)
                                                    tag=0x02
 
-0x32     0E                                      Array leaf
+0x31     0E                                      Array leaf
          11                                        node_len=17 (total node size)
          00                                        shift=0
          03 00                                     bitmap=0x0003 (slots 0,1)
          02 00 00 00                               length=2
-         20 00 00 00                               entry[0] addr → @0x20 (i64 10)
-         29 00 00 00                               entry[1] addr → @0x29 (i64 20)
+         1F 00 00 00                               entry[0] addr → @0x1F (i64 10)
+         28 00 00 00                               entry[1] addr → @0x28 (i64 20)
 
-0x43     0F                                      Map leaf for slot 5
+0x42     0F                                      Map leaf for slot 5
          0A                                        node_len=10 (total node size)
-         19 00 00 00                               key addr → @0x19 ("scores")
-         32 00 00 00                               val addr → @0x32 (array)
+         1A 00 00 00                               key addr → @0x1A ("data")
+         31 00 00 00                               val addr → @0x31 (array)
 
-0x4D     07                                      Map branch (root)
+0x4C     07                                      Map branch (root)
          0E                                        node_len=14 (total node size)
          22 00 00 00                               bitmap=0x0022 (slots 1,5)
-         0F 00 00 00                               child[0] → @0x0F (slot 1 leaf)
-         43 00 00 00                               child[1] → @0x43 (slot 5 leaf)
+         10 00 00 00                               child[0] → @0x10 (slot 1 leaf)
+         42 00 00 00                               child[1] → @0x42 (slot 5 leaf)
 
-0x5B     4D 00 00 00                             Footer: root_addr=@0x4D
+0x5A     4C 00 00 00                             Footer: root_addr=@0x4C
          00 00 00 00                               prev_root=0 (canonical)
 ─────────────────────────────────────────────────────────────────────────────────
-Total: 99 bytes (0x63)
+Total: 98 bytes (0x62)
 ```
 
 Tag byte encoding reference:
@@ -512,18 +512,17 @@ Tag byte encoding reference:
 - `0x0F` = `0b00_00_1_111` → map leaf (MM=0 → L=1, B=1, TTT=111)
 - `0x4C` = `0b0100_1_100` → txt packed L=4
 - `0x5C` = `0b0101_1_100` → txt packed L=5
-- `0x6C` = `0b0110_1_100` → txt packed L=6
 
-### Traversal: Looking up `scores[1]`
+### Traversal: Looking up `data[1]`
 
 ```
 ┌──────────┐    read footer      ┌─────────────┐
-│  Start   │ ─────────────────▶  │ root = 0x4D │
+│  Start   │ ─────────────────▶  │ root = 0x4C │
 └──────────┘                     └──────┬──────┘
                                         │
                                         ▼
         ┌────────────────────────────────────────────────────────────┐
-        │ 1. Hash "scores": xxh32("scores") = 0x12348765             │
+        │ 1. Hash "data": xxh32("data") = 0x21228A35                 │
         │    slot = (hash >> 0) & 0xF = 5                            │
         │    bitmap 0x0022 has slot 5                                │
         │      → child index = popcount(bitmap & ((1 << slot) - 1))  │
@@ -532,19 +531,19 @@ Tag byte encoding reference:
         │                    = popcount(0x2)                         │
         │                    = popcount(0b10)                        │
         │      ∴ child index = 1                                     │
-        │    Follow child[1] → address 0x43                          │
+        │    Follow child[1] → address 0x42                          │
         └────────────────────────────────────────────────────────────┘
                                         │
                                         ▼
         ┌────────────────────────────────────────────────────────────┐
-        │ 2. At Map Leaf 0x43: scan entries for key "scores"         │
-        │    Compare key @ 0x19 with "scores" → match!               │
-        │    Value addr = 0x32 (array leaf)                          │
+        │ 2. At Map Leaf 0x42: scan entries for key "data"           │
+        │    Compare key @ 0x1A with "data" → match!                 │
+        │    Value addr = 0x31 (array leaf)                          │
         └────────────────────────────────────────────────────────────┘
                                         │
                                         ▼
         ┌────────────────────────────────────────────────────────────┐
-        │ 3. At Array Leaf 0x32: looking for index 1                 │
+        │ 3. At Array Leaf 0x31: looking for index 1                 │
         │      → slot = (index >> shift) & 0xF                       │
         │             = (1 >> 0) & 0xF                               │
         │      ∴ slot = 1                                            │
@@ -553,12 +552,12 @@ Tag byte encoding reference:
         │                    = popcount(0b11 & 0b1)                  │
         │                    = popcount(0b1)                         │
         │      ∴ value index = 1                                     │
-        │    Read entry[1] addr → 0x29                               │
+        │    Read entry[1] addr → 0x28                               │
         └────────────────────────────────────────────────────────────┘
                                         │
                                         ▼
         ┌────────────────────────────────────────────────────────────┐
-        │ 4. Read value node at 0x29                                 │
+        │ 4. Read value node at 0x28                                 │
         │    tag = 0x02 → i64                                        │
         │    payload = 0x14 = 20                                     │
         └────────────────────────────────────────────────────────────┘
@@ -569,23 +568,23 @@ Tag byte encoding reference:
                                 └──────────────┘
 ```
 
-### After Updating `scores[0]` to `99`
+### After Updating `data[0]` to `99`
 
 ```diff
   {
-    "name": "alice",
--   "scores": [10, 20]
-+   "scores": [99, 20]
+    "items": "alice",
+-   "data": [10, 20]
++   "data": [99, 20]
   }
 ```
 
 ```
-Before (99 bytes):
+Before (98 bytes):
 ┌────────┬─────────┬─────────┬─────────┬──────────┬───────┬───────┬─────────┬──────────┬───────────┬─────────────┐
-│ 0x00   │ 0x04    │ 0x09    │ 0x0F    │ 0x19     │ 0x20  │ 0x29  │ 0x32    │ 0x43     │ 0x4D      │ 0x5B        │
+│ 0x00   │ 0x04    │ 0x0A    │ 0x10    │ 0x1A     │ 0x1F  │ 0x28  │ 0x31    │ 0x42     │ 0x4C      │ 0x5A        │
 │ Header │ txt     │ txt     │ MapLeaf │ txt      │ i64   │ i64   │ ArrLeaf │ MapLeaf  │ MapBranch │ Root footer │
-│ "TRON" │ "name"  │ "alice" │ k0@0x04 │ "scores" │ 10    │ 20    │ 0@0x20  │ k0@0x19  │ @0x0F     │ @0x4D       │
-│        │         │         │ v0@0x09 │          │       │       │ 1@0x29  │ v0@0x32  │ @0x43     │             │
+│ "TRON" │ "items" │ "alice" │ k0@0x04 │ "data"   │ 10    │ 20    │ 0@0x1F  │ k0@0x1A  │ @0x10     │ @0x4C       │
+│        │         │         │ v0@0x0A │          │       │       │ 1@0x28  │ v0@0x31  │ @0x42     │             │
 └────────┴─────────┴─────────┴─────────┴──────────┴───────┴───────┴─────────┴──────────┴───────────┴─────────────┘
            ▲         ▲         ▲ ││      ▲          ▲       ▲       ▲ ││      ▲ ││       ▲ ││        │
            │         └─────────│─┘│      │          │       └───────│─┘│      │ ││       └───────────┘
@@ -593,12 +592,12 @@ Before (99 bytes):
                                │         │                          └───────────┘│          │
                                │         └───────────────────────────────────────┘          │
                                └────────────────────────────────────────────────────────────┘
-After (186 bytes):
+After (185 bytes):
 ┌──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬────────┬─────────┬────────┬──────────────┐
-│ 0x00 │ 0x04 │ 0x09 │ 0x0F │ 0x19 │ 0x20 │ 0x29 │ 0x32 │ 0x43 │ 0x4D │ 0x5B │ 0x63 │ 0x6C   │ 0x7D    │ 0x87   │ 0x95         │
+│ 0x00 │ 0x04 │ 0x0A │ 0x10 │ 0x1A │ 0x1F │ 0x28 │ 0x31 │ 0x42 │ 0x4C │ 0x5A │ 0x62 │ 0x6B   │ 0x7C    │ 0x86   │ 0x94         │
 │ Hdr  │ txt  │ txt  │ ML   │ txt  │ i64  │ i64  │ AL   │ ML   │ MB   │ RF   │ i64  │ AL'    │ ML'     │ MB'    │ RF'          │
-│      │      │      │      │      │      │      │      │      │      │      │ 99   │ 0@0x63 │ k0@0x19 │ 0@0x0F │ @0x87        │
-│      │      │      │      │      │ X    │      │ X    │ X    │ X    │ X    │      │ 1@0x29 │ v0@0x6C │ 1@0x7D │ @0x4D (prev) │
+│      │      │      │      │      │      │      │      │      │      │      │ 99   │ 0@0x62 │ k0@0x1A │ 0@0x10 │ @0x86        │
+│      │      │      │      │      │ X    │      │ X    │ X    │ X    │ X    │      │ 1@0x28 │ v0@0x6B │ 1@0x7C │ @0x4C (prev) │
 └──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴────────┴─────────┴────────┴──────────────┘
          ▲      ▲      ▲ ││   ▲             ▲                                  ▲      ▲ ││     ▲││       ▲ ││     │
          │      └──────│─┘│   │             └─────────────────────────────────────────│─┘│     │││       └────────┘
@@ -610,9 +609,9 @@ After (186 bytes):
 
 Note:
 
-- The `"name"` leaf at @0x0F is **reused** (structural sharing)
-- Scalars "name", "alice", "scores", and i64(20) are **reused**
-- Old arr/map nodes at @0x32, @0x43, @0x4D are **historical** (reachable via
+- The `"items"` leaf at @0x10 is **reused** (structural sharing)
+- Scalars "items", "alice", "data", and i64(20) are **reused**
+- Old arr/map nodes at @0x31, @0x42, @0x4C are **historical** (reachable via
   `prev` chain for time travel)
 - The old root footer RF is findable at `prev_root + 1 + (M+1) + node_len` (see
   History Traversal)
