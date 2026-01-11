@@ -14,6 +14,7 @@
 | 9        | 2026-01-10 | @oliverlambson            | Use a single document type for scalar & tree values |
 | 10       | 2026-01-10 | @oliverlambson            | Remove entry_count from arr/map nodes               |
 | 11       | 2026-01-10 | @oliverlambson            | Only include arr length on root arr nodes           |
+| 12       | 2026-01-11 | @oliverlambson            | Move magic "TRON" to document header                |
 
 This document defines the binary format for TRie Object Notation. It is intended to be compatible with JSON primitives while using HAMT (for maps) and vector tries (for arrays) to support fast in-place modifications without rewriting the entire document. The format targets transport and embedding as a single blob in databases or KV stores, not a database or storage engine itself.
 
@@ -27,9 +28,18 @@ All multi-byte values are little-endian.
 
 TRON document trees are traversed by following "address" values for bytes. An address is the absolute position of a byte within the docuement's byte buffer. Addresses are u32 values starting at 0x00 for the first byte of the buffer.
 
-## 3. Root footer
+## 3. Header and root footer
 
-The root footer lives at the end of a tree document (last 12 bytes). Writers append new nodes, then append a new root footer with the new root address. The previous root address allows walking the history backward. The magic `TRON` is the last 4 bytes of the document.
+The first 4 bytes of the document must be the magic `TRON`.
+
+Header layout (from start of document):
+
+```
+Address Size  Field
+0       4     Magic "TRON"
+```
+
+The root footer lives at the end of a tree document (last 8 bytes). Writers append new nodes, then append a new root footer with the new root address. The previous root address allows walking the history backward.
 
 Root footer layout (from start of footer):
 
@@ -37,12 +47,12 @@ Root footer layout (from start of footer):
 Offset  Size  Field
 0       4     Root node address (u32)
 4       4     Prev root address (u32)
-8       4     Magic "TRON"
 ```
 
 Read flow:
 
-- Read the last 12 bytes and parse the footer (magic is at the end).
+- Read the first 4 bytes and validate it matches the magic.
+- Read the last 8 bytes and parse the footer.
 - Read the root node at the address; the node's header encodes its length.
 
 Write flow (copy-on-write):
@@ -559,46 +569,46 @@ split and the ops have been enumerated._
 
 ```mermaid
 flowchart TB
-      root["Array Leaf (Root)<br/>0xC5<br/>[0] → @0x5A<br/>[1] → @0xB3"]
+      root["Array Leaf (Root)<br/>0xC9<br/>[0] → @0x5E<br/>[1] → @0xB7"]
 
-      obj0["Map Branch<br/>0x5A<br/>slot[0] → @0x0F<br/>slot[6] → @0x3A<br/>slot[11] → @0x50"]
+      obj0["Map Branch<br/>0x5E<br/>slot[0] → @0x13<br/>slot[6] → @0x3C<br/>slot[11] → @0x54"]
 
-      obj1["Map Branch<br/>0xB3<br/>slot[0] → @0x75<br/>slot[6] → @0x93<br/>slot[11] → @0xA9"]
+      obj1["Map Branch<br/>0xB7<br/>slot[0] → @0x79<br/>slot[6] → @0x97<br/>slot[11] → @0xAD"]
 
       %% Object 0 map leaves
-      leaf0_value["Map Leaf<br/>0x0F<br/>key → @0x00<br/>val → @0x06"]
-      leaf0_path["Map Leaf<br/>0x3A<br/>key → @0x24<br/>val → @0x29"]
-      leaf0_op["Map Leaf<br/>0x50<br/>key → @0x44<br/>val → @0x47"]
+      leaf0_value["Map Leaf<br/>0x13<br/>key → @0x04<br/>val → @0x0A"]
+      leaf0_path["Map Leaf<br/>0x3C<br/>key → @0x28<br/>val → @0x2D"]
+      leaf0_op["Map Leaf<br/>0x54<br/>key → @0x48<br/>val → @0x4B"]
 
       %% Object 0 keys/values
-      key0_value["String<br/>0x00<br/>&quot;value&quot;"]
-      val0_value["Int<br/>0x06<br/>1"]
+      key0_value["String<br/>0x04<br/>&quot;value&quot;"]
+      val0_value["Int<br/>0x0A<br/>1"]
 
-      key0_path["String<br/>0x24<br/>&quot;path&quot;"]
-      val0_path["Array Leaf<br/>0x29<br/>[0] → @0x19<br/>[1] → @0x1B"]
+      key0_path["String<br/>0x28<br/>&quot;path&quot;"]
+      val0_path["Array Leaf<br/>0x2D<br/>[0] → @0x1D<br/>[1] → @0x1F"]
 
-      path0_0["String<br/>0x19<br/>&quot;a&quot;"]
-      path0_1["Int<br/>0x1B<br/>0"]
+      path0_0["String<br/>0x1D<br/>&quot;a&quot;"]
+      path0_1["Int<br/>0x1F<br/>0"]
 
-      key0_op["String<br/>0x44<br/>&quot;op&quot;"]
-      val0_op["Int<br/>0x47<br/>0"]
+      key0_op["String<br/>0x48<br/>&quot;op&quot;"]
+      val0_op["Int<br/>0x4B<br/>0"]
 
       %% Object 1 map leaves
-      leaf1_value["Map Leaf<br/>0x75<br/>key → @0x6C<br/>val → @0x72"]
-      leaf1_path["Map Leaf<br/>0x93<br/>key → @0x81<br/>val → @0x86"]
-      leaf1_op["Map Leaf<br/>0xA9<br/>key → @0x9D<br/>val → @0xA0"]
+      leaf1_value["Map Leaf<br/>0x79<br/>key → @0x70<br/>val → @0x76"]
+      leaf1_path["Map Leaf<br/>0x97<br/>key → @0x85<br/>val → @0x8A"]
+      leaf1_op["Map Leaf<br/>0xAD<br/>key → @0xA1<br/>val → @0xA4"]
 
       %% Object 1 keys/values
-      key1_value["String<br/>0x6C<br/>&quot;value&quot;"]
-      val1_value["String<br/>0x72<br/>&quot;hi&quot;"]
+      key1_value["String<br/>0x70<br/>&quot;value&quot;"]
+      val1_value["String<br/>0x76<br/>&quot;hi&quot;"]
 
-      key1_path["String<br/>0x81<br/>&quot;path&quot;"]
-      val1_path["Array Leaf<br/>0x86<br/>[0] → @0x7F"]
+      key1_path["String<br/>0x85<br/>&quot;path&quot;"]
+      val1_path["Array Leaf<br/>0x8A<br/>[0] → @0x83"]
 
-      path1_0["String<br/>0x7F<br/>&quot;b&quot;"]
+      path1_0["String<br/>0x83<br/>&quot;b&quot;"]
 
-      key1_op["String<br/>0x9D<br/>&quot;op&quot;"]
-      val1_op["Int<br/>0xA0<br/>2"]
+      key1_op["String<br/>0xA1<br/>&quot;op&quot;"]
+      val1_op["Int<br/>0xA4<br/>2"]
 
       %% Connections
       root --> obj0
@@ -639,108 +649,110 @@ flowchart TB
 **TRON bytes (hex, addresses at left):**
 
 ```
+// Header
+0000: 54 52 4F 4E                       magic "TRON"
+
 // Object 0: {"value": 1, "path": ["a", 0], "op": 0}
 // node: key "value"
-0000: 5C 76 61 6C 75 65                 "value"::txt (packed, len=5)
+0004: 5C 76 61 6C 75 65                 "value"::txt (packed, len=5)
 // node: value 1
-0006: 02 01 00 00 00 00 00 00 00        1::i64
+000A: 02 01 00 00 00 00 00 00 00        1::i64
 // node: map leaf {"value": 1}
-000F: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
-0010: 0A                                node_len=10
-0011: 00 00 00 00                       entry[0].key address   = @0000
-0015: 06 00 00 00                       entry[0].value address = @0006
+0013: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
+0014: 0A                                node_len=10
+0015: 04 00 00 00                       entry[0].key address   = @0004
+0019: 0A 00 00 00                       entry[0].value address = @000A
 // node: "a" (path element)
-0019: 1C 61                             "a"::txt (packed, len=1)
+001D: 1C 61                             "a"::txt (packed, len=1)
 // node: 0 (path element)
-001B: 02 00 00 00 00 00 00 00 00        0::i64
+001F: 02 00 00 00 00 00 00 00 00        0::i64
 // node: key "path"
-0024: 4C 70 61 74 68                    "path"::txt (packed, len=4)
+0028: 4C 70 61 74 68                    "path"::txt (packed, len=4)
 // node: array ["a", 0]
-0029: 0E                                type=arr; B=1=leaf; M=0 (0b00_00_1_110)
-002A: 11                                node_len=17
-002B: 00                                shift=0
-002C: 03 00                             bitmap=0b11 (slots 0,1)
-002E: 02 00 00 00                       length=2
-0032: 19 00 00 00                       entry[0] address = @0019
-0036: 1B 00 00 00                       entry[1] address = @001B
+002D: 0E                                type=arr; B=1=leaf; M=0 (0b00_00_1_110)
+002E: 11                                node_len=17
+002F: 00                                shift=0
+0030: 03 00                             bitmap=0b11 (slots 0,1)
+0032: 02 00 00 00                       length=2
+0034: 1D 00 00 00                       entry[0] address = @001D
+0038: 1F 00 00 00                       entry[1] address = @001F
 // node: map leaf {"path": [...]}
-003A: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
-003B: 0A                                node_len=10
-003C: 24 00 00 00                       entry[0].key address   = @0024
-0040: 29 00 00 00                       entry[0].value address = @0029
+003C: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
+003F: 0A                                node_len=10
+0030: 28 00 00 00                       entry[0].key address   = @0028
+0044: 2D 00 00 00                       entry[0].value address = @002D
 // node: key "op"
-0044: 2C 6F 70                          "op"::txt (packed, len=2)
+0048: 2C 6F 70                          "op"::txt (packed, len=2)
 // node: value 0
-0047: 02 00 00 00 00 00 00 00 00        0::i64
+004B: 02 00 00 00 00 00 00 00 00        0::i64
 // node: map leaf {"op": 0}
-0050: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
-0051: 0A                                node_len=10
-0052: 44 00 00 00                       entry[0].key address   = @0044
-0056: 47 00 00 00                       entry[0].value address = @0047
+0054: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
+0055: 0A                                node_len=10
+0056: 48 00 00 00                       entry[0].key address   = @0048
+005A: 4B 00 00 00                       entry[0].value address = @004B
 // node: map branch (object 0)
-005A: 07                                type=map; B=0=branch; M=0 (0b00_00_0_111)
-005B: 12                                node_len=18
-005C: 41 08 00 00                       bitmap=0x0841 (slots 0,6,11)
-0060: 0F 00 00 00                       slot[0] address  = @000F (leaf "value")
-0064: 3A 00 00 00                       slot[6] address  = @003A (leaf "path")
-0068: 50 00 00 00                       slot[11] address = @0050 (leaf "op")
+005E: 07                                type=map; B=0=branch; M=0 (0b00_00_0_111)
+005F: 12                                node_len=18
+0060: 41 08 00 00                       bitmap=0x0841 (slots 0,6,11)
+0064: 0F 00 00 00                       slot[0] address  = @0013 (leaf "value")
+0068: 3A 00 00 00                       slot[6] address  = @003E (leaf "path")
+006D: 50 00 00 00                       slot[11] address = @0054 (leaf "op")
 
 // Object 1: {"value": "hi", "path": ["b"], "op": 2}
 // node: key "value"
-006C: 5C 76 61 6C 75 65                 "value"::txt (packed, len=5)
+0070: 5C 76 61 6C 75 65                 "value"::txt (packed, len=5)
 // node: value "hi"
-0072: 2C 68 69                          "hi"::txt (packed, len=2)
+0076: 2C 68 69                          "hi"::txt (packed, len=2)
 // node: map leaf {"value": "hi"}
-0075: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
-0076: 0A                                node_len=10
-0077: 6C 00 00 00                       entry[0].key address   = @006C
-007B: 72 00 00 00                       entry[0].value address = @0072
+0079: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
+007A: 0A                                node_len=10
+007B: 70 00 00 00                       entry[0].key address   = @0070
+007F: 76 00 00 00                       entry[0].value address = @0076
 // node: "b" (path element)
-007F: 1C 62                             "b"::txt (packed, len=1)
+0083: 1C 62                             "b"::txt (packed, len=1)
 // node: key "path"
-0081: 4C 70 61 74 68                    "path"::txt (packed, len=4)
+0085: 4C 70 61 74 68                    "path"::txt (packed, len=4)
 // node: array ["b"]
-0086: 0E                                type=arr; B=1=leaf; M=0 (0b00_00_1_110)
-0087: 0D                                node_len=13
-0088: 00                                shift=0
-0089: 01 00                             bitmap=0b1 (slot 0)
-008B: 01 00 00 00                       length=1
-008F: 7F 00 00 00                       entry[0] address = @007F
+008A: 0E                                type=arr; B=1=leaf; M=0 (0b00_00_1_110)
+008B: 0D                                node_len=13
+008C: 00                                shift=0
+008D: 01 00                             bitmap=0b1 (slot 0)
+008F: 01 00 00 00                       length=1
+0093: 83 00 00 00                       entry[0] address = @0083
 // node: map leaf {"path": [...]}
-0093: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
-0094: 0A                                node_len=10
-0095: 81 00 00 00                       entry[0].key address   = @0081
-0099: 86 00 00 00                       entry[0].value address = @0086
+0097: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
+0098: 0A                                node_len=10
+0099: 85 00 00 00                       entry[0].key address   = @0085
+009D: 8A 00 00 00                       entry[0].value address = @008A
 // node: key "op"
-009D: 2C 6F 70                          "op"::txt (packed, len=2)
+00A1: 2C 6F 70                          "op"::txt (packed, len=2)
 // node: value 2
-00A0: 02 02 00 00 00 00 00 00 00        2::i64
+00A4: 02 02 00 00 00 00 00 00 00        2::i64
 // node: map leaf {"op": 2}
-00A9: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
-00AA: 0A                                node_len=10
-00AB: BD 00 00 00                       entry[0].key address   = @009D
-00AF: C0 00 00 00                       entry[0].value address = @00A0
+00AD: 0F                                type=map; B=1=leaf; M=0 (0b00_00_1_111)
+00AE: 0A                                node_len=10
+00AF: A1 00 00 00                       entry[0].key address   = @00A1
+00B3: A4 00 00 00                       entry[0].value address = @00A4
 // node: map branch (object 1)
-00B3: 07                                type=map; B=0=branch; M=0 (0b00_00_0_111)
-00B4: 12                                node_len=18
-00B5: 41 08 00 00                       bitmap=0x0841 (slots 0,6,11)
-00B9: 75 00 00 00                       slot[0] address  = @0075 (leaf "value")
-00BD: 93 00 00 00                       slot[6] address  = @0093 (leaf "path")
-00C1: A9 00 00 00                       slot[11] address = @00A9 (leaf "op")
+00B7: 07                                type=map; B=0=branch; M=0 (0b00_00_0_111)
+00B8: 12                                node_len=18
+00B9: 41 08 00 00                       bitmap=0x0841 (slots 0,6,11)
+00BD: 79 00 00 00                       slot[0] address  = @0079 (leaf "value")
+00C1: 97 00 00 00                       slot[6] address  = @0097 (leaf "path")
+00C5: AD 00 00 00                       slot[11] address = @00AD (leaf "op")
 
 // Root array
-00C5: 0E                                type=arr; B=1=leaf; M=0 (0b00_00_1_110)
-00C6: 11                                node_len=17
-00C7: 00                                shift=0
-00C8: 03 00                             bitmap=0b11 (slots 0,1)
-00CA: 02 00 00 00                       length=2
-00CE: 5A 00 00 00                       entry[0] address = @005A (object 0)
-00D2: B3 00 00 00                       entry[1] address = @00B3 (object 1)
+00C9: 0E                                type=arr; B=1=leaf; M=0 (0b00_00_1_110)
+00CA: 11                                node_len=17
+00CB: 00                                shift=0
+00CC: 03 00                             bitmap=0b11 (slots 0,1)
+00CE: 02 00 00 00                       length=2
+00D2: 5E 00 00 00                       entry[0] address = @005E (object 0)
+00D6: B7 00 00 00                       entry[1] address = @00B7 (object 1)
 
 // Root footer
-00D6: C5 00 00 00                       root address = @00C5
-00DA: 00 00 00 00                       prev root address = 0 (canonical)
-00DE: 54 52 4F 4E                       magic "TRON"
+00DA: C9 00 00 00                       root address = @00C9
+00DE: 00 00 00 00                       prev root address = 0 (canonical)
 ```
 
 Bytes = 226
