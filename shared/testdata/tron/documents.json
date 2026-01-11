@@ -1,0 +1,45 @@
+[
+  {
+    "description": "scalar null",
+    "json": null,
+    "tron": "54524F4E000400000000000000"
+  },
+  {
+    "description": "scalar string \"hi\"",
+    "json": "hi",
+    "tron": "54524F4E2C68690400000000000000"
+  },
+  {
+    "description": "nested object with array",
+    "json": { "name": "alice", "scores": [10, 20] },
+    "tron": "54524F4E4C6E616D655C616C6963650F0A04000000090000006C73636F726573020A000000000000000214000000000000000E110003000200000020000000290000000F0A1900000032000000070E220000000F000000430000004D00000000000000"
+  },
+  {
+    "description": "hash collision at depth 0 (keys 'a' and 'v' both hash to slot 6)",
+    "json": { "a": 1, "v": 2 },
+    "tron": "54524F4E1C760202000000000000000F0A04000000060000001C610201000000000000000F0A190000001B000000070E300000000F00000024000000070A400000002E0000003C00000000000000"
+  },
+  {
+    "description": "multi-level array (17 elements, requires root shift=4)",
+    "json": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      42
+    ],
+    "tron": "54524F4E00000000000000000000000000000000022A000000000000004E4500FFFF0400000005000000060000000700000008000000090000000A0000000B0000000C0000000D0000000E0000000F000000100000001100000012000000130000004E09000100140000000611040300110000001D000000620000006B00000000000000"
+  }
+]
